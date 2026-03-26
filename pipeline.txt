@@ -1,0 +1,730 @@
+[pipeline_agent] pipeline_builder.result
+{
+  "subtype": "success",
+  "duration_ms": 97529,
+  "duration_api_ms": 35029,
+  "is_error": false,
+  "num_turns": 5,
+  "stop_reason": "end_turn",
+  "total_cost_usd": 0.09936524999999999,
+  "result": "\n\nThe pipeline has been submitted. Here's a summary of what it does:\n\n1. **Keyword Filter** \u2014 Ensures all items mention Ace Attorney-related terms (Phoenix Wright, Apollo Justice, Miles Edgeworth, Capcom, etc.) while excluding spam like giveaways and cosplay tutorials.\n\n2. **Conditional: Reddit** \u2014 Posts from r/AceAttorney go through an LLM filter that passes only official game updates, announcements, releases, patches, and DLC news \u2014 rejecting fan art, memes, and general community chat.\n\n3. **Conditional: Google News & YouTube** \u2014 Articles and videos are scored via semantic similarity against a query about official Ace Attorney game news (threshold 0.65), filtering out loosely related content.\n\n4. **Conditional: Nitter (Twitter)** \u2014 Tweets from @AceAttorneyGame and @CapcomUSA_ are LLM-filtered to keep only official announcements, trailers, release dates, and updates \u2014 dropping fan reactions and unrelated promotions.\n\n5. **Drop Short Content** \u2014 Removes items with very little content that are unlikely to be substantive updates."
+}
+
+[pipeline_agent] pipeline_builder.submitted
+{
+  "blocks_json": [
+    {
+      "type": "keyword_filter",
+      "include": [
+        "ace attorney",
+        "phoenix wright",
+        "apollo justice",
+        "miles edgeworth",
+        "capcom",
+        "objection",
+        "great ace attorney"
+      ],
+      "exclude": [
+        "giveaway",
+        "cosplay tutorial"
+      ],
+      "fields": [
+        "title",
+        "content"
+      ]
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "type": "source_type",
+        "value": "reddit"
+      },
+      "if_true": [
+        {
+          "type": "llm_filter",
+          "prompt": "You are filtering posts from the Ace Attorney subreddit. Pass only posts that relate to official game updates, news, announcements, new releases, patches, DLC, ports, remasters, trailers, or official Capcom communications about the Ace Attorney franchise. Reject fan art, memes, gameplay questions, tier lists, shipping discussions, and general community chat.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5-20251001",
+          "max_tokens": 600,
+          "model_params": {
+            "temperature": 0
+          }
+        }
+      ],
+      "if_false": []
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "type": "or",
+        "conditions": [
+          {
+            "type": "source_type",
+            "value": "google_news"
+          },
+          {
+            "type": "source_type",
+            "value": "youtube"
+          }
+        ]
+      },
+      "if_true": [
+        {
+          "type": "semantic_similarity",
+          "query": "Official Ace Attorney game news: new game announcements, release dates, trailers, patches, DLC, ports, remasters, and Capcom updates about the franchise",
+          "field": "content",
+          "threshold": 0.65
+        }
+      ],
+      "if_false": []
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "type": "source_type",
+        "value": "nitter"
+      },
+      "if_true": [
+        {
+          "type": "llm_filter",
+          "prompt": "You are filtering tweets related to Ace Attorney game updates. Pass tweets that announce or discuss official game news such as: new game reveals, release dates, trailers, gameplay footage, patches, updates, DLC, sales milestones, ports, remasters, or official Capcom statements. Reject tweets that are purely fan reactions with no news content, retweets of fan art, or unrelated Capcom promotions.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5-20251001",
+          "max_tokens": 600,
+          "model_params": {
+            "temperature": 0
+          }
+        }
+      ],
+      "if_false": []
+    },
+    {
+      "type": "custom_block",
+      "name": "drop_short_content"
+    }
+  ]
+}
+
+[pipeline_agent] pipeline.initial_blocks
+[
+  {
+    "type": "keyword_filter",
+    "include": [
+      "ace attorney",
+      "phoenix wright",
+      "apollo justice",
+      "miles edgeworth",
+      "capcom",
+      "objection",
+      "great ace attorney"
+    ],
+    "exclude": [
+      "giveaway",
+      "cosplay tutorial"
+    ],
+    "fields": [
+      "title",
+      "content"
+    ]
+  },
+  {
+    "type": "conditional",
+    "condition": {
+      "type": "source_type",
+      "value": "reddit"
+    },
+    "if_true": [
+      {
+        "type": "llm_filter",
+        "prompt": "You are filtering posts from the Ace Attorney subreddit. Pass only posts that relate to official game updates, news, announcements, new releases, patches, DLC, ports, remasters, trailers, or official Capcom communications about the Ace Attorney franchise. Reject fan art, memes, gameplay questions, tier lists, shipping discussions, and general community chat.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 600,
+        "model_params": {
+          "temperature": 0
+        }
+      }
+    ],
+    "if_false": []
+  },
+  {
+    "type": "conditional",
+    "condition": {
+      "type": "or",
+      "conditions": [
+        {
+          "type": "source_type",
+          "value": "google_news"
+        },
+        {
+          "type": "source_type",
+          "value": "youtube"
+        }
+      ]
+    },
+    "if_true": [
+      {
+        "type": "semantic_similarity",
+        "query": "Official Ace Attorney game news: new game announcements, release dates, trailers, patches, DLC, ports, remasters, and Capcom updates about the franchise",
+        "field": "content",
+        "threshold": 0.65
+      }
+    ],
+    "if_false": []
+  },
+  {
+    "type": "conditional",
+    "condition": {
+      "type": "source_type",
+      "value": "nitter"
+    },
+    "if_true": [
+      {
+        "type": "llm_filter",
+        "prompt": "You are filtering tweets related to Ace Attorney game updates. Pass tweets that announce or discuss official game news such as: new game reveals, release dates, trailers, gameplay footage, patches, updates, DLC, sales milestones, ports, remasters, or official Capcom statements. Reject tweets that are purely fan reactions with no news content, retweets of fan art, or unrelated Capcom promotions.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+        "provider": "anthropic",
+        "model": "claude-haiku-4-5-20251001",
+        "max_tokens": 600,
+        "model_params": {
+          "temperature": 0
+        }
+      }
+    ],
+    "if_false": []
+  },
+  {
+    "type": "custom_block",
+    "name": "drop_short_content"
+  }
+]
+
+[pipeline_agent] iteration.start
+{
+  "iteration": 1
+}
+
+[pipeline_agent] evaluation.sources
+[
+  {
+    "type": "google_news_search",
+    "feed": "\"Ace Attorney\" game"
+  },
+  {
+    "type": "nitter_user",
+    "feed": "AceAttorneyGame"
+  },
+  {
+    "type": "youtube_channel",
+    "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCKKGlGrWD1ZxicRrqF6K98A"
+  },
+  {
+    "type": "rss",
+    "feed": "https://www.reddit.com/r/AceAttorney/new/.rss?sort=new"
+  },
+  {
+    "type": "nitter_search",
+    "feed": "\"Ace Attorney\" from:CapcomUSA_"
+  }
+]
+
+[pipeline_agent] evaluation.article_preview
+[
+  {
+    "title": "Ace Attorney-Themed \u201c2001 Game Channel\u201d Caf\u00e9 Announced In China - Noisy Pixel",
+    "url": "https://news.google.com/rss/articles/CBMic0FVX3lxTE1aVzgxUVFROTlnYl9rbFlQeS1MR0NUeDI4dzlxMkJfTkQ5dDZrU3owc1A3TTc3X3ZxbWNTNGtNOGVIWHYzRTJnRnIzLXdBVjV4NDRmR1FzdHc0cFIwb3VtXzc5YnVLUl9LWU1OYXdEdHlEQ1U?oc=5",
+    "published_at": "2026-03-16T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "\"I Was Really Close To Dying\" - Phoenix Wright: Ace Attorney's Original Composer On The Hidden Struggles Behind Its Iconic Score - timeextension.com",
+    "url": "https://news.google.com/rss/articles/CBMi8wFBVV95cUxPS0kwcW01eTdyVGJsWWFyQzQta0pBODFpckNpcktZSUY0Wlp0N3BNckFkQWliaXdjSXVmRzJPa21Hdy1Ba1dreFI5YnFqRFFidUhTUUtmN24wUVN1VFphT1ZsOGJPaWNKRnVKVmtad3NHeS1Sc09KU0Vzb1A0RnBJTVhYc3JyUnVSTkJwdzNYbWZhUzdtQTdOdWlvVlZGOFU1a0phczEtLUI4Ni1RU2RrdWMzRl9UUDk3RURUekRyN3pVQ1BNY3MydG9ySms3aGRyV3YyTTBrNjVPdmJHOEhXNDNwdlY4eE1ZNDBsb2w1a3RTMDA?oc=5",
+    "published_at": "2025-12-08T08:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Phoenix Wright: Ace Attorney Trilogy Gets New Modes, Language Support, and More in November - RPGFan",
+    "url": "https://news.google.com/rss/articles/CBMioAFBVV95cUxNRXZBMHJqYm12Umg0REEwc0ZEazRHenJvQ1pBUmg0a1NSS1dreUt1QU12QmVPNEpaNk5IRkdGaXBRTGNoX3ltNnFzNHZheWVpQU1NakRVSHRBdEEyYXdya1VjcFVrR2RPWGxxdG9vZGJOTDJMWWlRWWhkcmNmWUhsWnh6OExzV3hlOUlGb1RzX3FudFhkTkxVazdRYWZyMF9n?oc=5",
+    "published_at": "2025-09-29T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "We're Not Getting A New Game, But 'Phoenix Wright: Ace Attorney Trilogy' Gets A Free Update - Nintendo Life",
+    "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxOMDQ5alNrdGdveXk3V1QtdUg2RzRibTV2RDlpZVY5YUR3VzNKMVBNMHlud0poQlVHbG4wUjVvUnBPMXFaUjdBY0NQZWxHVzhtbHRXYVpQUXM3YTZiNDB3TTh3amR2MW9uWDYtTzAzbkEyb1Via0dVNGxUUDJTRU1FZWdNRGJoTjhFVGVZVl9hMHBLUnRUel9LUThJNFhlWFdYeUdrYzlzWG9vU3RKLXYxZW96c0R2b3BEUk9Xay1KX1dxQTZqMzhB?oc=5",
+    "published_at": "2025-09-24T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Phoenix Wright: Ace Attorney Trilogy Gets Free Title Update on November 19 - Crunchyroll",
+    "url": "https://news.google.com/rss/articles/CBMipgFBVV95cUxQRDUyQ2Rsd2g1a0swQkY1d2dEQnZ0Yk9FeWtCRy1GR1JLRTVjT2pCQzVjRWNCSHBfcXhKWktESnIzdkxFLU5tQnhqWkNWWXhmeDJOb0xidXpCOHV3bGoyS29scE8zWTE0bkZTUmZGODZROEUyclBISHBjZWVwS2JGcTN1UlIzYnVfSlVuNGNWcnc4ZVpYUEtzeFJJa3lNVWg3UDZsaFln?oc=5",
+    "published_at": "2025-09-24T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Capcom looked at Phoenix Wright: Ace Attorney western release as a \"throwaway game\" - Nintendo Everything",
+    "url": "https://news.google.com/rss/articles/CBMisgFBVV95cUxQc3A0dEZJc3AwaXo2MXZVVnVoTmhGWTJLdkhnWnZqLVVfanNrNThFMG53VnR3a0N4d3R0TXJpX080VFVKbDR0QmpNYUxUTzRFN1pJYkdjOFg4MEtOUk42WTRTZUZiaGpRNHE5RDhkQ29TOHhFLVd1ZGJXNmpFdG1OMkU1ZnBDb3JzYUlBeUQ5T042ZU9qeXFvd3ZrdHhDdTJnWFFlbEdoOGVuQ2FzejljckpR?oc=5",
+    "published_at": "2025-09-23T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Capcom seek new heights as they whisper potential new Ace Attorney, Mega Man, and Devil May Cry games into existence - Rock Paper Shotgun",
+    "url": "https://news.google.com/rss/articles/CBMi4AFBVV95cUxQUXZiRmxkMFpuY0FWWXg0OHhlRVphV2wwSnJYdXZ6RDBjNUIxV3J5Q3V1NlBmOEk4bTNZNU1QX3ItQmJqOXJTQS1vZTk2N2J2eU01b0JOMDZGWW5oNjBqZmdMWURGeDBvcjF3NUttblctY2RNcWl2dExkNldOWVphQThhZTZaMGRmS2U1U1U0RW44ekVoNXpURzdjQi1uYl9WMXFweW13NmJCbklTYWlHd2xteFItUzN2TjRneDA2VlJMU3g3c2Qyem5Oc1BFcVUwYkQ3WnlGT0l1cndHQUtwXw?oc=5",
+    "published_at": "2025-12-08T08:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Phoenix Wright: Ace Attorney Trilogy Free Title Update Rolls Out on November 19! New Modes and Features Added - Saiga NAK",
+    "url": "https://news.google.com/rss/articles/CBMid0FVX3lxTFBJQldiMVJ2ZEFMd1hsWkdiWVJYc0dlQ1dlWmlQYTV0LUM1aUtFTUtnVE1wMkU1TVN2U2EtNDM5U0pkdS1KcXVtM3FzZnVZY0U0aTBaanFSM210YzFNcm9DSzVJczZwX1I4N1duZFZldWI5VHJrN2VN0gF8QVVfeXFMT1dVMmhwVlZjUVVSYzFOSHQyd04wU1czd3UzQ2pCclZmSEpHblJtV2xiVWlVQzQ0bEFTZEo3ejRqSy0ydHZ4TkNrbm5WbkkzVkhiM3FXWTZkU1d4MDhMR29EaENYX1lGNkt1OXN6aWFrcUpEUXNLdTVnbWF3bg?oc=5",
+    "published_at": "2025-09-28T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Capcom considered Phoenix Wright: Ace Attorney's localization a \"throwaway game,\" didn't think it would do well - GoNintendo",
+    "url": "https://news.google.com/rss/articles/CBMivwFBVV95cUxPc1czMFlIckM2YWRZY0pjcjlPTXVvUzlNX1VaWjRsZWl2eGxKSFVaT0hKZElFZ3J2RnBVb1BzVTRfU2lySkgxcnBIRjF3US10a19BNGxuNkJzSGgzQUlnbFZ4enQwVE12cG85TnFvdEZMZUh1VWJqeVRTSEQzZnE5Nl9JWHJ0OXJONmoyVDNBcEZ2VktlRlB0YkRlM3dfT3RrekdBVHZXbUMtWFNBaGpQc2tiSDVzcU5DOElQUmdRdw?oc=5",
+    "published_at": "2025-09-23T07:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  },
+  {
+    "title": "Capcom Has Plans For More Mega Man, Devil May Cry, and Ace Attorney Titles - GameSpot",
+    "url": "https://news.google.com/rss/articles/CBMivAFBVV95cUxQcjF4REhreElpckRYNC1IQlRIbFlPN1pIQUxxTzBfU3diTjhaM29OX0UwUFF3SWk0cTFPNWhuWkdpZDZuNWdjOHRDN1RnUXFPYlVzcGVwZ1ZhZ3BUOWtBRjdueGl4T3M0UGxJSVo2VG9sX1VvNzZjcDlfNHZ5YTZNQTJwVmJYaDBSTFZCNU1YM1ZqR3NLQTU1Z1puc3BuSGtsVnktRHQ2bGttOFdKSkphS2s3MTFMYkJ5azZ3UA?oc=5",
+    "published_at": "2025-12-09T08:00:00+00:00",
+    "source_name": "\"\"Ace Attorney\" game\" - Google News",
+    "source_type": "google_news"
+  }
+]
+
+[pipeline_agent] iteration.evaluation
+{
+  "iteration": 1,
+  "passed_count": 22,
+  "filtered_count": 158
+}
+
+[pipeline_agent] iteration.critic_feedback
+{
+  "satisfied": false,
+  "feedback": "The pipeline has a critical coverage failure: the semantic_similarity threshold of 0.65 for google_news is systematically filtering out the most relevant articles (actual game update news from RPGFan, Nintendo Life, GameSpot, Crunchyroll) which are scoring 0.56-0.64. Meanwhile, Reddit fan discussion and repetitive promotional tweets are passing through as noise. The threshold needs to be lowered for news sources, and an LLM filter should replace or supplement the semantic filter to make smarter decisions about gaming journalism content.",
+  "issues": {
+    "coverage": "Key gaming press articles about actual patches, title updates, and future game announcements from RPGFan, Nintendo Life, GameSpot, and Crunchyroll are being blocked by the 0.65 semantic similarity threshold despite being the most on-topic content for 'Ace Attorney game updates'. Scores of 0.56-0.64 are just below the cutoff, meaning the threshold is miscalibrated for this topic.",
+    "noise": "Repetitive promotional sale tweets (Black Friday, TGS, holiday sales) from CapcomUSA_ are passing the nitter LLM filter when they are marketing noise rather than game updates. Reddit fan posts about gameplay impressions, character comparisons to Bleach, and subjective case rankings are passing through despite the LLM filter, suggesting the filter prompt needs tightening.",
+    "sources": "Gaming journalism outlets (RPGFan, Nintendo Life, GameSpot, Crunchyroll) are the primary sources of actual game update coverage but are being systematically excluded. The pipeline has no mechanism to recognize and prioritize these high-quality gaming press sources."
+  },
+  "suggested_changes": [
+    {
+      "block": "conditional (google_news/youtube branch) - semantic_similarity",
+      "change": "Lower the semantic_similarity threshold from 0.65 to 0.52 for google_news sources to allow gaming journalism articles scoring in the 0.54-0.64 range to pass through to a downstream LLM filter.",
+      "reason": "The most relevant articles (title updates, patch notes, future plans) are scoring 0.56-0.64 and being incorrectly excluded. The threshold is too aggressive and is causing the primary coverage gap for this topic."
+    },
+    {
+      "block": "conditional (google_news/youtube branch)",
+      "change": "After the semantic_similarity filter, add an llm_filter with a prompt that passes articles about Ace Attorney game updates, patches, title updates, new releases, ports, remasters, DLC, developer announcements, and Capcom roadmap news, while rejecting reviews of unrelated games with Ace Attorney comparisons, fan wikis, and merchandise articles.",
+      "reason": "A semantic filter alone cannot distinguish between genuinely relevant gaming journalism and tangential content at lower thresholds. An LLM filter will make intelligent decisions about borderline articles that pass the lowered semantic threshold, preventing new noise while recovering the missing coverage."
+    },
+    {
+      "block": "conditional (nitter branch) - llm_filter prompt",
+      "change": "Update the nitter LLM filter prompt to explicitly reject repetitive promotional sale announcements (e.g. Black Friday, holiday, TGS discount tweets) unless they announce a new product, bundle, or milestone. Add instruction: 'Reject tweets that are purely discount/sale promotions with no new game or update announcement attached.'",
+      "reason": "Repetitive sale tweets from CapcomUSA_ are currently passing and constitute a large portion of noise in passed content. The current prompt does not explicitly exclude promotional pricing content."
+    },
+    {
+      "block": "conditional (reddit branch) - llm_filter prompt",
+      "change": "Tighten the Reddit LLM filter prompt by adding explicit rejection criteria: 'Reject posts comparing Ace Attorney characters to other franchises, posts asking for YouTube channel or content creator recommendations, posts ranking or listing favorite moments/cases/twists, and posts sharing personal gameplay impressions without any news hook.'",
+      "reason": "Fan discussion posts about Bleach character comparisons, YouTuber searches, and case twist rankings are passing through the current Reddit filter, which is not strict enough about distinguishing community chat from actual game update news."
+    },
+    {
+      "block": "new",
+      "change": "Add a source allowlist/boost block before the semantic filter that automatically passes articles from known gaming press domains: rpgfan.com, nintendolife.com, gamespot.com, crunchyroll.com, gematsu.com, gonintendo.com, siliconera.com when they contain Ace Attorney keywords.",
+      "reason": "These outlets are the primary sources of actual game update journalism for the Ace Attorney franchise and are being unfairly penalized by the semantic threshold. Trusted gaming press sources covering this topic should not be subject to the same semantic scoring as general web content."
+    }
+  ]
+}
+
+[pipeline_agent] iteration.max_exceeded
+{
+  "iteration": 1
+}
+
+{
+  "topic": "Ace Attorney game updates",
+  "dispatch": {
+    "agents": [
+      "rss",
+      "youtube",
+      "reddit",
+      "nitter"
+    ],
+    "reasons": {
+      "rss": "Gaming news outlets frequently cover Ace Attorney updates, announcements, and releases via RSS feeds",
+      "youtube": "YouTube is a major platform for game trailers, gameplay reveals, and Ace Attorney community content and analysis videos",
+      "reddit": "Subreddits like r/AceAttorney and r/Games are active hubs for discussing game updates, leaks, and community speculation",
+      "nitter": "Official Capcom and Ace Attorney Twitter/X accounts often post breaking news, teasers, and announcements about game updates"
+    }
+  },
+  "source_agent_outputs": [
+    {
+      "agent": "rss",
+      "sources": [
+        {
+          "type": "google_news_search",
+          "feed": "\"Ace Attorney\" game"
+        },
+        {
+          "type": "rss",
+          "feed": "https://www.siliconera.com/feed/"
+        },
+        {
+          "type": "rss",
+          "feed": "https://www.nintendolife.com/feeds/latest"
+        }
+      ],
+      "notes": "1) Google News search for \"Ace Attorney\" game \u2014 best targeted source, aggregates coverage from all outlets including official Capcom announcements. Confirmed active with recent articles. 2) Siliconera \u2014 high-signal Japanese gaming editorial site that regularly covers Capcom and Ace Attorney news. Active feed confirmed. 3) Nintendo Life \u2014 strong Nintendo-focused editorial site; Ace Attorney titles are primarily Nintendo-platform, so this captures relevant coverage. Active feed confirmed. Court-records.net (dedicated fan site) has no working RSS feed. Capcom's own site has no active native feed."
+    },
+    {
+      "agent": "youtube",
+      "sources": [
+        {
+          "type": "youtube_channel",
+          "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCKKGlGrWD1ZxicRrqF6K98A"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCW7h-1mymnJ96akzjrmiIgA"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCDNWLkwuti_0-6-GB1cc6aw"
+        }
+      ],
+      "notes": "1. **Ace Attorney** (official, 31.5K subs) \u2014 The dedicated official Capcom channel for the Ace Attorney series. Publishes trailers, launch videos, title update announcements, and promotional content. This is the single best primary source for Ace Attorney game updates. Preview confirmed recent content including the Trilogy title update trailer and Investigations Collection launch trailer. 2. **Capcom USA** (official, 350K subs) \u2014 Capcom's main US channel covering all franchises. Major Ace Attorney announcements (new game reveals, showcase appearances) would appear here alongside other Capcom titles. Good for catching cross-franchise showcases and events where AA news drops. 3. **The Mason System** (niche, 590 subs) \u2014 A focused commentary channel covering detective lawyer games and visual novels, with Ace Attorney as a core topic. Provides community analysis and discussion of news/updates that complements the official channels."
+    },
+    {
+      "agent": "reddit",
+      "sources": [
+        {
+          "type": "rss",
+          "feed": "https://www.reddit.com/r/AceAttorney/new/.rss?sort=new"
+        }
+      ],
+      "notes": "r/AceAttorney (~148K subscribers) is the primary dedicated subreddit for the Ace Attorney franchise. It covers game news, updates, announcements, fan discussions, and community content. Active feed with multiple posts daily. Other subreddits found (AceAttorneyCirclejerk, AceAttorneyShips) are not relevant for game updates, and broader gaming subs like r/Games would be too noisy for this niche topic."
+    },
+    {
+      "agent": "nitter",
+      "sources": [
+        {
+          "type": "nitter_user",
+          "feed": "AceAttorneyGame"
+        },
+        {
+          "type": "nitter_search",
+          "feed": "\"Ace Attorney\" from:CapcomUSA_"
+        },
+        {
+          "type": "nitter_search",
+          "feed": "\"Ace Attorney\" new game OR announcement OR trailer OR release"
+        }
+      ],
+      "notes": "@AceAttorneyGame is the official English Ace Attorney account \u2014 active with collabs, streams, and community posts. The CapcomUSA_ filtered search catches publisher-level Ace Attorney announcements (sales, new releases, events). The broader search query picks up significant news moments like new game announcements and trailers from the wider community. The Japanese official accounts (@capaborney, @GS_takumi) were not available via Nitter."
+    }
+  ],
+  "synthesis": {
+    "selected_sources": [
+      {
+        "type": "google_news_search",
+        "feed": "\"Ace Attorney\" game"
+      },
+      {
+        "type": "nitter_user",
+        "feed": "AceAttorneyGame"
+      },
+      {
+        "type": "youtube_channel",
+        "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCKKGlGrWD1ZxicRrqF6K98A"
+      },
+      {
+        "type": "rss",
+        "feed": "https://www.reddit.com/r/AceAttorney/new/.rss?sort=new"
+      },
+      {
+        "type": "nitter_search",
+        "feed": "\"Ace Attorney\" from:CapcomUSA_"
+      }
+    ],
+    "rejected_sources": [
+      {
+        "type": "rss",
+        "feed": "https://www.siliconera.com/feed/"
+      },
+      {
+        "type": "rss",
+        "feed": "https://www.nintendolife.com/feeds/latest"
+      },
+      {
+        "type": "youtube_channel",
+        "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCW7h-1mymnJ96akzjrmiIgA"
+      },
+      {
+        "type": "youtube_channel",
+        "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCDNWLkwuti_0-6-GB1cc6aw"
+      },
+      {
+        "type": "nitter_search",
+        "feed": "\"Ace Attorney\" new game OR announcement OR trailer OR release"
+      }
+    ],
+    "rationale": "Selected 5 high-signal sources across complementary channels. Google News search is the best single aggregator for Ace Attorney coverage from all press outlets. The official @AceAttorneyGame Twitter and dedicated YouTube channel are the two primary first-party sources for announcements, trailers, and updates. r/AceAttorney (148K subs) is the community hub that surfaces news quickly. The filtered CapcomUSA_ Nitter search catches publisher-level announcements without noise. Rejected Siliconera and Nintendo Life because both are high-volume general gaming feeds where Ace Attorney articles are rare \u2014 Google News already captures their relevant pieces. Rejected Capcom USA YouTube because preview showed zero AA content among recent uploads (all other franchises); redundant with the dedicated AA channel. Rejected The Mason System as a tiny commentary channel (590 subs) unsuitable as a news source. Rejected the broad Nitter search as too noisy and largely redundant with the Google News aggregator."
+  },
+  "blocks_json": [
+    {
+      "type": "keyword_filter",
+      "include": [
+        "ace attorney",
+        "phoenix wright",
+        "apollo justice",
+        "miles edgeworth",
+        "capcom",
+        "objection",
+        "great ace attorney"
+      ],
+      "exclude": [
+        "giveaway",
+        "cosplay tutorial"
+      ],
+      "fields": [
+        "title",
+        "content"
+      ]
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "type": "source_type",
+        "value": "reddit"
+      },
+      "if_true": [
+        {
+          "type": "llm_filter",
+          "prompt": "You are filtering posts from the Ace Attorney subreddit. Pass only posts that relate to official game updates, news, announcements, new releases, patches, DLC, ports, remasters, trailers, or official Capcom communications about the Ace Attorney franchise. Reject fan art, memes, gameplay questions, tier lists, shipping discussions, and general community chat.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5-20251001",
+          "max_tokens": 600,
+          "model_params": {
+            "temperature": 0
+          }
+        }
+      ],
+      "if_false": []
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "type": "or",
+        "conditions": [
+          {
+            "type": "source_type",
+            "value": "google_news"
+          },
+          {
+            "type": "source_type",
+            "value": "youtube"
+          }
+        ]
+      },
+      "if_true": [
+        {
+          "type": "semantic_similarity",
+          "query": "Official Ace Attorney game news: new game announcements, release dates, trailers, patches, DLC, ports, remasters, and Capcom updates about the franchise",
+          "field": "content",
+          "threshold": 0.65
+        }
+      ],
+      "if_false": []
+    },
+    {
+      "type": "conditional",
+      "condition": {
+        "type": "source_type",
+        "value": "nitter"
+      },
+      "if_true": [
+        {
+          "type": "llm_filter",
+          "prompt": "You are filtering tweets related to Ace Attorney game updates. Pass tweets that announce or discuss official game news such as: new game reveals, release dates, trailers, gameplay footage, patches, updates, DLC, sales milestones, ports, remasters, or official Capcom statements. Reject tweets that are purely fan reactions with no news content, retweets of fan art, or unrelated Capcom promotions.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+          "provider": "anthropic",
+          "model": "claude-haiku-4-5-20251001",
+          "max_tokens": 600,
+          "model_params": {
+            "temperature": 0
+          }
+        }
+      ],
+      "if_false": []
+    },
+    {
+      "type": "custom_block",
+      "name": "drop_short_content"
+    }
+  ],
+  "critic_history": [
+    {
+      "satisfied": false,
+      "feedback": "The pipeline has a critical coverage failure: the semantic_similarity threshold of 0.65 for google_news is systematically filtering out the most relevant articles (actual game update news from RPGFan, Nintendo Life, GameSpot, Crunchyroll) which are scoring 0.56-0.64. Meanwhile, Reddit fan discussion and repetitive promotional tweets are passing through as noise. The threshold needs to be lowered for news sources, and an LLM filter should replace or supplement the semantic filter to make smarter decisions about gaming journalism content.",
+      "issues": {
+        "coverage": "Key gaming press articles about actual patches, title updates, and future game announcements from RPGFan, Nintendo Life, GameSpot, and Crunchyroll are being blocked by the 0.65 semantic similarity threshold despite being the most on-topic content for 'Ace Attorney game updates'. Scores of 0.56-0.64 are just below the cutoff, meaning the threshold is miscalibrated for this topic.",
+        "noise": "Repetitive promotional sale tweets (Black Friday, TGS, holiday sales) from CapcomUSA_ are passing the nitter LLM filter when they are marketing noise rather than game updates. Reddit fan posts about gameplay impressions, character comparisons to Bleach, and subjective case rankings are passing through despite the LLM filter, suggesting the filter prompt needs tightening.",
+        "sources": "Gaming journalism outlets (RPGFan, Nintendo Life, GameSpot, Crunchyroll) are the primary sources of actual game update coverage but are being systematically excluded. The pipeline has no mechanism to recognize and prioritize these high-quality gaming press sources."
+      },
+      "suggested_changes": [
+        {
+          "block": "conditional (google_news/youtube branch) - semantic_similarity",
+          "change": "Lower the semantic_similarity threshold from 0.65 to 0.52 for google_news sources to allow gaming journalism articles scoring in the 0.54-0.64 range to pass through to a downstream LLM filter.",
+          "reason": "The most relevant articles (title updates, patch notes, future plans) are scoring 0.56-0.64 and being incorrectly excluded. The threshold is too aggressive and is causing the primary coverage gap for this topic."
+        },
+        {
+          "block": "conditional (google_news/youtube branch)",
+          "change": "After the semantic_similarity filter, add an llm_filter with a prompt that passes articles about Ace Attorney game updates, patches, title updates, new releases, ports, remasters, DLC, developer announcements, and Capcom roadmap news, while rejecting reviews of unrelated games with Ace Attorney comparisons, fan wikis, and merchandise articles.",
+          "reason": "A semantic filter alone cannot distinguish between genuinely relevant gaming journalism and tangential content at lower thresholds. An LLM filter will make intelligent decisions about borderline articles that pass the lowered semantic threshold, preventing new noise while recovering the missing coverage."
+        },
+        {
+          "block": "conditional (nitter branch) - llm_filter prompt",
+          "change": "Update the nitter LLM filter prompt to explicitly reject repetitive promotional sale announcements (e.g. Black Friday, holiday, TGS discount tweets) unless they announce a new product, bundle, or milestone. Add instruction: 'Reject tweets that are purely discount/sale promotions with no new game or update announcement attached.'",
+          "reason": "Repetitive sale tweets from CapcomUSA_ are currently passing and constitute a large portion of noise in passed content. The current prompt does not explicitly exclude promotional pricing content."
+        },
+        {
+          "block": "conditional (reddit branch) - llm_filter prompt",
+          "change": "Tighten the Reddit LLM filter prompt by adding explicit rejection criteria: 'Reject posts comparing Ace Attorney characters to other franchises, posts asking for YouTube channel or content creator recommendations, posts ranking or listing favorite moments/cases/twists, and posts sharing personal gameplay impressions without any news hook.'",
+          "reason": "Fan discussion posts about Bleach character comparisons, YouTuber searches, and case twist rankings are passing through the current Reddit filter, which is not strict enough about distinguishing community chat from actual game update news."
+        },
+        {
+          "block": "new",
+          "change": "Add a source allowlist/boost block before the semantic filter that automatically passes articles from known gaming press domains: rpgfan.com, nintendolife.com, gamespot.com, crunchyroll.com, gematsu.com, gonintendo.com, siliconera.com when they contain Ace Attorney keywords.",
+          "reason": "These outlets are the primary sources of actual game update journalism for the Ace Attorney franchise and are being unfairly penalized by the semantic threshold. Trusted gaming press sources covering this topic should not be subject to the same semantic scoring as general web content."
+        }
+      ]
+    }
+  ],
+  "satisfied": false,
+  "iterations": 1,
+  "final_config": {
+    "topic": "Ace Attorney game updates",
+    "sources": [
+      {
+        "type": "google_news_search",
+        "feed": "\"Ace Attorney\" game"
+      },
+      {
+        "type": "nitter_user",
+        "feed": "AceAttorneyGame"
+      },
+      {
+        "type": "youtube_channel",
+        "feed": "https://www.youtube.com/feeds/videos.xml?channel_id=UCKKGlGrWD1ZxicRrqF6K98A"
+      },
+      {
+        "type": "rss",
+        "feed": "https://www.reddit.com/r/AceAttorney/new/.rss?sort=new"
+      },
+      {
+        "type": "nitter_search",
+        "feed": "\"Ace Attorney\" from:CapcomUSA_"
+      }
+    ],
+    "blocks": [
+      {
+        "type": "keyword_filter",
+        "include": [
+          "ace attorney",
+          "phoenix wright",
+          "apollo justice",
+          "miles edgeworth",
+          "capcom",
+          "objection",
+          "great ace attorney"
+        ],
+        "exclude": [
+          "giveaway",
+          "cosplay tutorial"
+        ],
+        "fields": [
+          "title",
+          "content"
+        ]
+      },
+      {
+        "type": "conditional",
+        "condition": {
+          "type": "source_type",
+          "value": "reddit"
+        },
+        "if_true": [
+          {
+            "type": "llm_filter",
+            "prompt": "You are filtering posts from the Ace Attorney subreddit. Pass only posts that relate to official game updates, news, announcements, new releases, patches, DLC, ports, remasters, trailers, or official Capcom communications about the Ace Attorney franchise. Reject fan art, memes, gameplay questions, tier lists, shipping discussions, and general community chat.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 600,
+            "model_params": {
+              "temperature": 0
+            }
+          }
+        ],
+        "if_false": []
+      },
+      {
+        "type": "conditional",
+        "condition": {
+          "type": "or",
+          "conditions": [
+            {
+              "type": "source_type",
+              "value": "google_news"
+            },
+            {
+              "type": "source_type",
+              "value": "youtube"
+            }
+          ]
+        },
+        "if_true": [
+          {
+            "type": "semantic_similarity",
+            "query": "Official Ace Attorney game news: new game announcements, release dates, trailers, patches, DLC, ports, remasters, and Capcom updates about the franchise",
+            "field": "content",
+            "threshold": 0.65
+          }
+        ],
+        "if_false": []
+      },
+      {
+        "type": "conditional",
+        "condition": {
+          "type": "source_type",
+          "value": "nitter"
+        },
+        "if_true": [
+          {
+            "type": "llm_filter",
+            "prompt": "You are filtering tweets related to Ace Attorney game updates. Pass tweets that announce or discuss official game news such as: new game reveals, release dates, trailers, gameplay footage, patches, updates, DLC, sales milestones, ports, remasters, or official Capcom statements. Reject tweets that are purely fan reactions with no news content, retweets of fan art, or unrelated Capcom promotions.\n\nTitle: {title}\nContent: {content}\nSource: {source_name}\n\nReturn JSON with fields: pass (bool), criteria_met (list[str]), criteria_failed (list[str]), tags (list[str]), reasoning (str)",
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 600,
+            "model_params": {
+              "temperature": 0
+            }
+          }
+        ],
+        "if_false": []
+      },
+      {
+        "type": "custom_block",
+        "name": "drop_short_content"
+      }
+    ]
+  }
+}
