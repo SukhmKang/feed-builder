@@ -217,6 +217,57 @@ async def read_custom_block_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 
 @tool(
+    "get_custom_block_docs",
+    "Get the required contract and example structure for authoring a custom pipeline block. Call this if you are about to write a new custom block and need the exact interface.",
+    {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    },
+)
+async def get_custom_block_docs_tool(args: dict[str, Any]) -> dict[str, Any]:
+    del args
+    example_code = '''from dataclasses import dataclass
+from typing import Any
+
+from pipeline.core import BlockResult, copy_article
+
+
+@dataclass(slots=True)
+class ExampleBlock:
+    keyword: str
+
+    async def run(self, article: dict[str, Any]) -> BlockResult:
+        working_article = copy_article(article)
+        text = str(working_article.get("title", "")) + " " + str(working_article.get("content", ""))
+        passed = self.keyword.lower() in text.lower()
+        return {
+            "passed": passed,
+            "article": working_article,
+            "reason": "Matched keyword" if passed else "Keyword not found",
+        }
+'''
+    return success(
+        {
+            "summary": (
+                "A custom block module should define one or more importable classes that can be "
+                "instantiated by the pipeline loader. Each custom block class must expose "
+                "an async run(article) method returning a BlockResult dict."
+            ),
+            "requirements": [
+                "Use normal top-level Python imports; do not hide imports inside functions.",
+                "Define a class that can be imported from the module.",
+                "Implement async def run(self, article: dict[str, Any]) -> BlockResult.",
+                "Return a dict with keys: passed (bool), article (dict), reason (str).",
+                "Prefer copying the article before mutation, e.g. with copy_article(article).",
+                "Keep the block reusable and avoid hardcoding the current topic unless truly necessary.",
+            ],
+            "example_code": example_code,
+        }
+    )
+
+
+@tool(
     "write_custom_block",
     "Create or overwrite a custom block module in custom_blocks/.",
     {
@@ -418,6 +469,7 @@ async def search_custom_blocks_tool(args: dict[str, Any]) -> dict[str, Any]:
 CUSTOM_BLOCK_TOOLS = [
     list_custom_blocks_tool,
     read_custom_block_tool,
+    get_custom_block_docs_tool,
     write_custom_block_tool,
     delete_custom_block_tool,
     test_custom_block_tool,

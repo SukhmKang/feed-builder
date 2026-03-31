@@ -1,0 +1,13 @@
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    proxy: {
+      "/feeds": "http://localhost:8000",
+      "/push": "http://localhost:8000",
+      "/health": "http://localhost:8000",
+    },
+  },
+});

@@ -18,6 +18,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any, Literal, TypedDict
+from urllib.parse import parse_qs, unquote, urlparse
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -84,6 +85,13 @@ class SourceAgentOutput(TypedDict):
     notes: str
 
 
+class SourceGenerationResult(TypedDict):
+    topic: str
+    dispatch: DispatchPlan
+    source_agent_outputs: list[SourceAgentOutput]
+    merged_sources: list[dict[str, str]]
+
+
 class PipelineAgentResult(TypedDict):
     topic: str
     dispatch: DispatchPlan
@@ -99,12 +107,80 @@ class PipelineAgentResult(TypedDict):
 async def build_feed_config(
     topic: str,
     *,
-    max_iterations: int = 1,
+    max_iterations: int = 2,
     agent_model: str = DEFAULT_AGENT_MODEL,
     critic_model: str = DEFAULT_CRITIC_MODEL,
     verbose: bool = True,
 ) -> PipelineAgentResult:
     """Build a source list and pipeline config for a topic using a multi-agent loop."""
+
+    source_generation = await build_sources_for_topic(
+        topic,
+        agent_model=agent_model,
+        verbose=verbose,
+    )
+    return await build_feed_config_from_sources(
+        topic,
+        source_generation=source_generation,
+        max_iterations=max_iterations,
+        agent_model=agent_model,
+        critic_model=critic_model,
+        verbose=verbose,
+    )
+
+
+async def build_sources_for_topic(
+    topic: str,
+    *,
+    agent_model: str = DEFAULT_AGENT_MODEL,
+    verbose: bool = True,
+) -> SourceGenerationResult:
+    """Run dispatch and source agents only, returning a reusable intermediate source bundle."""
+
+    normalized_topic = topic.strip()
+    if not normalized_topic:
+        raise ValueError("topic must be non-empty")
+    _log(verbose, "source_generation.start", {"topic": normalized_topic})
+
+    dispatch = await _run_dispatch_agent(normalized_topic, model=agent_model, verbose=verbose)
+    normalized_agents = _normalize_dispatch_agents(dispatch["agents"])
+    _log(verbose, "dispatch.selected_agents", normalized_agents)
+
+    for index, agent_name in enumerate(normalized_agents):
+        _log(
+            verbose,
+            "source_agent.start",
+            {"agent": agent_name, "position": index + 1, "total": len(normalized_agents)},
+        )
+
+    specialist_outputs = await asyncio.gather(
+        *[
+            _run_source_agent(agent_name, normalized_topic, model=agent_model, verbose=verbose)
+            for agent_name in normalized_agents
+        ]
+    )
+
+    merged_sources = _merge_source_agent_outputs(specialist_outputs)
+    _log(verbose, "sources.merged", merged_sources)
+
+    return {
+        "topic": normalized_topic,
+        "dispatch": dispatch,
+        "source_agent_outputs": specialist_outputs,
+        "merged_sources": merged_sources,
+    }
+
+
+async def build_feed_config_from_sources(
+    topic: str,
+    *,
+    source_generation: SourceGenerationResult,
+    max_iterations: int = 2,
+    agent_model: str = DEFAULT_AGENT_MODEL,
+    critic_model: str = DEFAULT_CRITIC_MODEL,
+    verbose: bool = True,
+) -> PipelineAgentResult:
+    """Build and refine pipeline logic using an existing source-generation bundle."""
 
     normalized_topic = topic.strip()
     if not normalized_topic:
@@ -112,32 +188,26 @@ async def build_feed_config(
     if max_iterations < 1:
         raise ValueError("max_iterations must be at least 1")
 
-    _log(verbose, "start", {"topic": normalized_topic, "max_iterations": max_iterations})
-
-    dispatch = await _run_dispatch_agent(normalized_topic, model=agent_model, verbose=verbose)
-    normalized_agents = _normalize_dispatch_agents(dispatch["agents"])
-    _log(verbose, "dispatch.selected_agents", normalized_agents)
-
-    specialist_outputs: list[SourceAgentOutput] = []
-    for index, agent_name in enumerate(normalized_agents):
-        _log(
-            verbose,
-            "source_agent.start",
-            {"agent": agent_name, "position": index + 1, "total": len(normalized_agents)},
+    bundle_topic = str(source_generation.get("topic", "")).strip()
+    if bundle_topic and bundle_topic != normalized_topic:
+        raise ValueError(
+            f"source_generation topic mismatch: expected {normalized_topic!r}, got {bundle_topic!r}"
         )
-        specialist_outputs.append(
-            await _run_source_agent(agent_name, normalized_topic, model=agent_model, verbose=verbose)
-        )
-        if index < len(normalized_agents) - 1:
-            _log(
-                verbose,
-                "source_agent.cooldown",
-                {"seconds": DEFAULT_SOURCE_AGENT_DELAY_SECONDS},
-            )
-            await asyncio.sleep(DEFAULT_SOURCE_AGENT_DELAY_SECONDS)
 
-    merged_sources = _merge_source_agent_outputs(specialist_outputs)
-    _log(verbose, "sources.merged", merged_sources)
+    dispatch = source_generation["dispatch"]
+    specialist_outputs = source_generation["source_agent_outputs"]
+    merged_sources = source_generation["merged_sources"]
+
+    _log(
+        verbose,
+        "start",
+        {
+            "topic": normalized_topic,
+            "max_iterations": max_iterations,
+            "reused_source_generation": True,
+            "merged_source_count": len(merged_sources),
+        },
+    )
 
     current_blocks_json = await _run_pipeline_builder_agent(
         normalized_topic,
@@ -190,16 +260,7 @@ async def build_feed_config(
 
         if iteration == max_iterations:
             _log(verbose, "iteration.max_exceeded", {"iteration": iteration})
-            return _build_result(
-                topic=normalized_topic,
-                dispatch=dispatch,
-                source_agent_outputs=specialist_outputs,
-                merged_sources=merged_sources,
-                blocks_json=current_blocks_json,
-                critic_history=critic_history,
-                satisfied=False,
-                iterations=iteration,
-            )
+            break
 
         current_blocks_json = await _run_pipeline_builder_agent(
             normalized_topic,
@@ -302,8 +363,12 @@ async def _run_pipeline_builder_agent(
 ) -> list[dict[str, Any]]:
     prompt_parts = [
         "Build a pipeline for the given topic and source set.",
+        "You are designing pipeline logic, not tuning to today's sample.",
+        "Assume source content will vary over weeks and months.",
+        "Optimize for rules that will hold up across the typical range of content these sources produce, not just the current snapshot.",
         "Use the available tools to preview sources, inspect existing custom blocks, and create custom blocks only when needed.",
         "Before creating a new custom block, search existing custom blocks to find reusable ones.",
+        "If you decide a new custom block is needed and you are unsure of the exact interface, call get_custom_block_docs before writing it.",
         "When the pipeline needs source-type-specific behavior, prefer a switch block over deeply nested conditionals.",
         "Use validate_pipeline_json to sanity-check candidate pipeline JSON before final submission when helpful.",
         "Return only the pipeline JSON array.",
@@ -342,6 +407,8 @@ async def _run_pipeline_builder_agent(
         "\n".join(prompt_parts),
         system_prompt=(
             "You are a pipeline building agent. "
+            "You are designing pipeline logic for the long run, not optimizing to today's sample. "
+            "Assume the previewed articles are illustrative only, and build rules that will generalize across the future stream. "
             "Prefer reusable custom blocks over creating new ones. "
             "Prefer switch blocks for source-type-specific routing instead of deeply nested conditionals. "
             "Use tools as needed, and when you are satisfied call submit_pipeline with the final pipeline JSON."
@@ -352,6 +419,7 @@ async def _run_pipeline_builder_agent(
             "search_custom_blocks",
             "list_custom_blocks",
             "read_custom_block",
+            "get_custom_block_docs",
             "write_custom_block",
             "delete_custom_block",
             "test_custom_block",
@@ -378,7 +446,7 @@ async def _evaluate_pipeline(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     blocks = deserialize_pipeline(blocks_json)
     _log(verbose, "evaluation.sources", selected_sources)
-    articles = await fetch_articles(selected_sources)
+    articles = await _fetch_articles_for_evaluation(selected_sources, verbose=verbose)
     _log(verbose, "evaluation.article_preview", [_article_log_summary(article) for article in articles[:10]])
 
     results = await asyncio.gather(*[run_pipeline(article, blocks) for article in articles])
@@ -391,6 +459,48 @@ async def _evaluate_pipeline(
         else:
             filtered.append(enriched_article)
     return passed, filtered
+
+
+async def _fetch_articles_for_evaluation(
+    selected_sources: list[dict[str, str]],
+    *,
+    verbose: bool,
+) -> list[dict[str, Any]]:
+    fetched_batches = await asyncio.gather(
+        *[fetch_articles([source]) for source in selected_sources],
+        return_exceptions=True,
+    )
+
+    articles: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for source, result in zip(selected_sources, fetched_batches, strict=False):
+        if isinstance(result, Exception):
+            error_payload = {
+                "type": source["type"],
+                "feed": source["feed"],
+                "error_type": type(result).__name__,
+                "error": str(result),
+            }
+            errors.append(error_payload)
+            _log(verbose, "evaluation.source_fetch_error", error_payload)
+            continue
+        articles.extend(result)
+
+    if errors:
+        _log(
+            verbose,
+            "evaluation.source_fetch_summary",
+            {
+                "source_count": len(selected_sources),
+                "success_count": len(selected_sources) - len(errors),
+                "error_count": len(errors),
+            },
+        )
+
+    if not articles:
+        raise ValueError("Evaluation could not fetch articles from any selected source")
+
+    return articles
 
 
 async def _run_agent_with_submission(
@@ -624,6 +734,108 @@ def _validate_source_spec(source: dict[str, Any], *, label: str) -> dict[str, st
     return {"type": source_type, "feed": feed}
 
 
+def _normalize_submitted_source_spec(
+    source: dict[str, Any],
+    *,
+    agent_name: str,
+    label: str,
+) -> dict[str, str]:
+    feed = str(source.get("feed", "")).strip()
+    if not feed:
+        raise ValueError(f"{label} is missing a non-empty feed value")
+
+    if agent_name == "youtube":
+        return _canonicalize_youtube_source_spec(feed)
+    if agent_name == "reddit":
+        return _canonicalize_reddit_source_spec(feed)
+    return _validate_source_spec(source, label=label)
+
+
+def _canonicalize_youtube_source_spec(feed: str) -> dict[str, str]:
+    channel_id = _extract_youtube_channel_id_from_feed_url(feed)
+    if channel_id:
+        return {"type": "youtube_channel", "feed": channel_id}
+    if _looks_like_youtube_url(feed) or feed.startswith("UC"):
+        return {"type": "youtube_channel", "feed": feed}
+    return {"type": "youtube_search", "feed": feed}
+
+
+def _canonicalize_reddit_source_spec(feed: str) -> dict[str, str]:
+    subreddit_name = _extract_reddit_subreddit_name(feed)
+    if subreddit_name:
+        return {"type": "reddit_subreddit", "feed": subreddit_name}
+
+    if _looks_like_reddit_url(feed):
+        query = _extract_reddit_search_query(feed)
+        if query:
+            return {"type": "reddit_search", "feed": query}
+
+    normalized = feed.strip()
+    if normalized.lower().startswith("r/"):
+        normalized = normalized[2:]
+    if _looks_like_simple_subreddit_name(normalized):
+        return {"type": "reddit_subreddit", "feed": normalized}
+    return {"type": "reddit_search", "feed": feed}
+
+
+def _extract_youtube_channel_id_from_feed_url(value: str) -> str | None:
+    parsed = urlparse(value)
+    hostname = parsed.netloc.lower()
+    if hostname not in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        return None
+    if parsed.path != "/feeds/videos.xml":
+        return None
+    channel_ids = parse_qs(parsed.query).get("channel_id", [])
+    for channel_id in channel_ids:
+        normalized = str(channel_id).strip()
+        if normalized:
+            return normalized
+    return None
+
+
+def _looks_like_youtube_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and "youtube.com" in parsed.netloc.lower()
+
+
+def _extract_reddit_subreddit_name(value: str) -> str | None:
+    normalized = value.strip()
+    if normalized.lower().startswith("r/"):
+        candidate = normalized[2:].strip().strip("/")
+        return candidate or None
+
+    parsed = urlparse(normalized)
+    if parsed.scheme in {"http", "https"} and "reddit.com" in parsed.netloc.lower():
+        path_parts = [part for part in parsed.path.split("/") if part]
+        if len(path_parts) >= 2 and path_parts[0].lower() == "r":
+            candidate = unquote(path_parts[1]).strip()
+            return candidate or None
+    return None
+
+
+def _extract_reddit_search_query(value: str) -> str | None:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or "reddit.com" not in parsed.netloc.lower():
+        return None
+    query_values = parse_qs(parsed.query).get("q", [])
+    for query in query_values:
+        normalized = unquote(str(query)).strip()
+        if normalized:
+            return normalized
+    return None
+
+
+def _looks_like_reddit_url(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and "reddit.com" in parsed.netloc.lower()
+
+
+def _looks_like_simple_subreddit_name(value: str) -> bool:
+    if not value or " " in value or "/" in value:
+        return False
+    return value.replace("_", "").isalnum()
+
+
 def _parse_json_text(text: str) -> Any:
     stripped = _strip_json_fences(text)
     return json.loads(stripped)
@@ -643,6 +855,12 @@ def _strip_json_fences(text: str) -> str:
 
 def _build_source_submission_tool(agent_name: str, *, verbose: bool) -> Any:
     def factory(store: dict[str, Any]) -> Any:
+        source_item_properties: dict[str, Any] = {"feed": {"type": "string"}}
+        source_item_required = ["feed"]
+        if agent_name not in {"youtube", "reddit"}:
+            source_item_properties["type"] = {"type": "string"}
+            source_item_required = ["type", "feed"]
+
         @tool(
             "submit_source_candidates",
             f"Submit the final source candidates chosen by the {agent_name} agent.",
@@ -654,11 +872,8 @@ def _build_source_submission_tool(agent_name: str, *, verbose: bool) -> Any:
                         "type": "array",
                         "items": {
                             "type": "object",
-                            "properties": {
-                                "type": {"type": "string"},
-                                "feed": {"type": "string"},
-                            },
-                            "required": ["type", "feed"],
+                            "properties": source_item_properties,
+                            "required": source_item_required,
                         },
                         "minItems": 1,
                     },
@@ -673,7 +888,10 @@ def _build_source_submission_tool(agent_name: str, *, verbose: bool) -> Any:
             if not isinstance(sources, list) or not all(isinstance(item, dict) for item in sources):
                 return {"content": [{"type": "text", "text": "sources must be a list of objects"}], "is_error": True}
             try:
-                validated_sources = [_validate_source_spec(item, label=f"{agent_name} source") for item in sources]
+                validated_sources = [
+                    _normalize_submitted_source_spec(item, agent_name=agent_name, label=f"{agent_name} source")
+                    for item in sources
+                ]
                 await _validate_live_sources(validated_sources, label=f"{agent_name} source", verbose=verbose)
             except Exception as exc:
                 return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
@@ -756,6 +974,15 @@ def _source_agent_tool_names(agent_name: str) -> list[str]:
 
 
 def _source_agent_system_prompt(agent_name: str) -> str:
+    if agent_name == "youtube":
+        source_shape = {"sources": [{"feed": "UCKKGlGrWD1ZxicRrqF6K98A"}], "notes": "short explanation"}
+    elif agent_name == "reddit":
+        source_shape = {"sources": [{"feed": "AceAttorney"}], "notes": "short explanation"}
+    else:
+        source_shape = {
+            "sources": [{"type": "rss", "feed": "https://example.com/feed"}],
+            "notes": "short explanation",
+        }
     return "\n".join(
         [
             f"You are the {agent_name.upper()} source agent.",
@@ -768,13 +995,7 @@ def _source_agent_system_prompt(agent_name: str) -> str:
             "Preview candidates before recommending them when possible.",
             "Prefer recurring, high-signal sources over broad noisy searches.",
             "When you are ready, call submit_source_candidates with this shape:",
-            json.dumps(
-                {
-                    "sources": [{"type": "rss", "feed": "https://example.com/feed"}],
-                    "notes": "short explanation",
-                },
-                indent=2,
-            ),
+            json.dumps(source_shape, indent=2),
         ]
     )
 
@@ -790,11 +1011,13 @@ def _build_source_agent_prompt(agent_name: str, topic: str) -> str:
         ),
         "youtube": (
             "Focus on relevant channels or YouTube source types that are stable for ongoing coverage. "
-            "Prefer youtube_channel or youtube_channels_by_topic over raw search unless search is truly the best fit."
+            "Submit only the canonical channel identifier, channel URL, or search query as the feed value; "
+            "the orchestrator will deterministically map it to the correct YouTube source type."
         ),
         "reddit": (
             "Focus on strong subreddit-based sources for ongoing topic coverage. "
-            "Prefer subreddit sources over broad searches when possible."
+            "Submit only the subreddit name, subreddit URL/RSS URL, or search query as the feed value; "
+            "the orchestrator will deterministically map it to the correct Reddit source type."
         ),
         "nitter": (
             "Focus on official accounts, developers, publishers, and high-signal topic accounts. "
@@ -916,4 +1139,12 @@ def _merge_source_agent_outputs(source_agent_outputs: list[SourceAgentOutput]) -
     return merged
 
 
-__all__ = ["DispatchPlan", "PipelineAgentResult", "SourceAgentOutput", "build_feed_config"]
+__all__ = [
+    "DispatchPlan",
+    "PipelineAgentResult",
+    "SourceAgentOutput",
+    "SourceGenerationResult",
+    "build_feed_config",
+    "build_feed_config_from_sources",
+    "build_sources_for_topic",
+]

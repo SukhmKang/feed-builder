@@ -5,6 +5,7 @@ from pipeline import (
     And,
     Conditional,
     CustomBlock,
+    DomainCondition,
     FieldContainsCondition,
     FieldEqualsCondition,
     FieldExistsCondition,
@@ -20,6 +21,7 @@ from pipeline import (
     PublishedBeforeCondition,
     SemanticSimilarity,
     SimilarityScoreCondition,
+    SourceDomainCondition,
     SourceNameCondition,
     SourceTypeCondition,
     SourceUrlCondition,
@@ -144,6 +146,8 @@ Leaf conditions:
 {"type": "source_type", "value": "nitter"}
 {"type": "source_name", "value": "Kotaku"}
 {"type": "source_url", "value": "https://example.com/feed"}
+{"type": "domain", "value": "youtube.com"}
+{"type": "source_domain", "value": "nintendolife.com"}
 {"type": "field_equals", "field": "source_name", "value": "Kotaku"}
 {"type": "field_contains", "field": "title", "value": "steam deck"}
 {"type": "field_exists", "field": "published_at"}
@@ -320,6 +324,12 @@ def deserialize_condition(condition_json: dict[str, Any]) -> Condition:
 
     if condition_type == "source_url":
         return SourceUrlCondition(url=_require_string(condition_json, "value", "source_url"))
+
+    if condition_type == "domain":
+        return DomainCondition(domain=_require_string(condition_json, "value", "domain"))
+
+    if condition_type == "source_domain":
+        return SourceDomainCondition(domain=_require_string(condition_json, "value", "source_domain"))
 
     if condition_type == "field_equals":
         return FieldEqualsCondition(

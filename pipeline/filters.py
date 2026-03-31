@@ -19,7 +19,7 @@ from pipeline.core import (
     run_pipeline,
 )
 from pipeline.conditions import Condition
-from pipeline.llm_config import LLMTier, TIER_MAP, resolve_tier_model
+from pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
 
 """
 Pipeline block contracts.
@@ -37,6 +37,8 @@ LLM_FILTER_SCHEMA_EXAMPLE = {
     "tags": ["example-tag"],
     "reasoning": "One line explanation.",
 }
+
+PROMPT_PLACEHOLDERS = ("title", "content", "source_name", "tags")
 
 
 @dataclass(slots=True)
@@ -141,18 +143,21 @@ class LLMFilter:
     tier: LLMTier = "mini"
 
     def __post_init__(self) -> None:
-        if self.tier not in TIER_MAP:
+        if self.tier not in VALID_LLM_TIERS:
             raise ValueError(f"Unsupported LLMFilter tier: {self.tier}")
 
     async def run(self, article: dict[str, Any]) -> BlockResult:
         """Run the prompt-driven JSON classifier and validate its output."""
 
         working_article = copy_article(article)
-        rendered_prompt = self.prompt.format(
-            title=working_article.get("title", ""),
-            content=working_article.get("content", ""),
-            source_name=working_article.get("source_name", ""),
-            tags=", ".join(ensure_tags(working_article)),
+        rendered_prompt = _render_prompt_template(
+            self.prompt,
+            {
+                "title": str(working_article.get("title", "")),
+                "content": str(working_article.get("content", "")),
+                "source_name": str(working_article.get("source_name", "")),
+                "tags": ", ".join(ensure_tags(working_article)),
+            },
         )
 
         validation_error = ""
@@ -405,6 +410,13 @@ def _validate_llm_filter_response(raw_response: str) -> dict[str, Any]:
     return parsed
 
 
+def _render_prompt_template(template: str, values: dict[str, str]) -> str:
+    rendered = str(template)
+    for placeholder in PROMPT_PLACEHOLDERS:
+        rendered = rendered.replace("{" + placeholder + "}", values.get(placeholder, ""))
+    return rendered
+
+
 __all__ = [
     "CustomBlock",
     "Conditional",
@@ -412,5 +424,5 @@ __all__ = [
     "LLMFilter",
     "SemanticSimilarity",
     "Switch",
-    "TIER_MAP",
+    "VALID_LLM_TIERS",
 ]

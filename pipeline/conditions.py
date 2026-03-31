@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse
 
 from llm import generate_text
 from pipeline.core import (
@@ -20,13 +21,15 @@ from pipeline.core import (
     tag_matches_pattern,
     value_exists,
 )
-from pipeline.llm_config import LLMTier, TIER_MAP, resolve_tier_model
+from pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
 
 LLM_CONDITION_MAX_ATTEMPTS = 2
 LLM_CONDITION_SCHEMA_EXAMPLE = {
     "boolean": True,
     "justification": "One line explanation.",
 }
+
+PROMPT_PLACEHOLDERS = ("title", "content", "source_name", "tags")
 
 
 @dataclass(slots=True)
@@ -57,6 +60,26 @@ class SourceUrlCondition:
 
     async def evaluate(self, article: dict[str, Any]) -> bool:
         return str(article.get("source_url", "")).strip() == self.url.strip()
+
+
+@dataclass(slots=True)
+class DomainCondition:
+    """Match on the domain of `article["url"]`."""
+
+    domain: str
+
+    async def evaluate(self, article: dict[str, Any]) -> bool:
+        return _normalized_domain(article.get("url")) == _normalized_domain(self.domain)
+
+
+@dataclass(slots=True)
+class SourceDomainCondition:
+    """Match on the domain of `article["source_url"]`."""
+
+    domain: str
+
+    async def evaluate(self, article: dict[str, Any]) -> bool:
+        return _normalized_domain(article.get("source_url")) == _normalized_domain(self.domain)
 
 
 @dataclass(slots=True)
@@ -240,15 +263,18 @@ class LLMCondition:
     tier: LLMTier = "mini"
 
     def __post_init__(self) -> None:
-        if self.tier not in TIER_MAP:
+        if self.tier not in VALID_LLM_TIERS:
             raise ValueError(f"Unsupported LLMCondition tier: {self.tier}")
 
     async def evaluate(self, article: dict[str, Any]) -> bool:
-        rendered_prompt = self.prompt.format(
-            title=article.get("title", ""),
-            content=article.get("content", ""),
-            source_name=article.get("source_name", ""),
-            tags=", ".join(ensure_tags(copy_article(article))),
+        rendered_prompt = _render_prompt_template(
+            self.prompt,
+            {
+                "title": str(article.get("title", "")),
+                "content": str(article.get("content", "")),
+                "source_name": str(article.get("source_name", "")),
+                "tags": ", ".join(ensure_tags(copy_article(article))),
+            },
         )
 
         validation_error = ""
@@ -311,6 +337,24 @@ class Not:
         return not await self.condition.evaluate(article)
 
 
+def _normalized_domain(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    hostname = (parsed.hostname or "").strip().lower()
+    if hostname.startswith("www."):
+        hostname = hostname[4:]
+    return hostname
+
+
+def _render_prompt_template(template: str, values: dict[str, str]) -> str:
+    rendered = str(template)
+    for placeholder in PROMPT_PLACEHOLDERS:
+        rendered = rendered.replace("{" + placeholder + "}", values.get(placeholder, ""))
+    return rendered
+
+
 def _build_llm_condition_system_prompt() -> str:
     return "\n\n".join(
         [
@@ -363,6 +407,7 @@ def _validate_llm_condition_response(raw_response: str) -> dict[str, Any]:
 __all__ = [
     "And",
     "Condition",
+    "DomainCondition",
     "FieldContainsCondition",
     "FieldEqualsCondition",
     "FieldExistsCondition",
@@ -375,6 +420,7 @@ __all__ = [
     "PublishedAfterCondition",
     "PublishedBeforeCondition",
     "SimilarityScoreCondition",
+    "SourceDomainCondition",
     "SourceNameCondition",
     "SourceTypeCondition",
     "SourceUrlCondition",

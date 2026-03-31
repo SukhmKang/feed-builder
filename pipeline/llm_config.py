@@ -3,6 +3,7 @@ from typing import Literal
 
 LLMTier = Literal["mini", "medium", "high"]
 LLMFamily = Literal["anthropic", "openai"]
+VALID_LLM_TIERS: tuple[LLMTier, ...] = ("mini", "medium", "high")
 
 TIER_MAP: dict[LLMFamily, dict[LLMTier, str]] = {
     "anthropic": {
@@ -30,4 +31,11 @@ def resolve_tier_model(tier: LLMTier) -> tuple[LLMFamily, str]:
     return family, TIER_MAP[family][tier]
 
 
-__all__ = ["LLMFamily", "LLMTier", "TIER_MAP", "get_pipeline_llm_family", "resolve_tier_model"]
+__all__ = [
+    "LLMFamily",
+    "LLMTier",
+    "TIER_MAP",
+    "VALID_LLM_TIERS",
+    "get_pipeline_llm_family",
+    "resolve_tier_model",
+]

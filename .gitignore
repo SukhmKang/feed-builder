@@ -13,6 +13,7 @@ ENV/
 .env
 .env.*
 !.env.example
+.python-version
 
 # Local databases and caches
 *.db
@@ -33,10 +34,18 @@ build/
 dist/
 *.egg-info/
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/coverage/
+frontend/.vite/
+
 # Local run outputs
 runs/
 output.json
 final_config.json
+*.log
 
 # macOS
 .DS_Store
@@ -44,3 +53,6 @@ final_config.json
 # Editor / IDE
 .idea/
 .vscode/
+
+# Project-specific local state
+nitter/sessions.jsonl

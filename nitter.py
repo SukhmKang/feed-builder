@@ -1,7 +1,9 @@
 import base64
+import asyncio
 import hashlib
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,10 +19,19 @@ load_dotenv()
 
 VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate"
 
-NITTER_BASE = "http://localhost:8080"
+NITTER_BASE = "http://nitter.sknitterinstance.com"
 DC_NS = "http://purl.org/dc/elements/1.1/"
+NITTER_MAX_CONCURRENT_REQUESTS = 1
+NITTER_MIN_INTERVAL_SECONDS = 1.0
+NITTER_RETRY_STATUS_CODES = {429}
+NITTER_MAX_RETRIES = 3
+NITTER_RETRY_BACKOFF_SECONDS = 2.0
 
 MediaType = Literal["image", "video", "gif"]
+
+_NITTER_REQUEST_SEMAPHORE = asyncio.Semaphore(NITTER_MAX_CONCURRENT_REQUESTS)
+_NITTER_PACING_LOCK = asyncio.Lock()
+_NITTER_LAST_REQUEST_STARTED_AT = 0.0
 
 
 @dataclass
@@ -267,9 +278,9 @@ async def fetch_tweet_media(tweet_url: str, http_client: httpx.AsyncClient | Non
     path = tweet_url.replace(NITTER_BASE, "").split("#")[0]
 
     try:
-        await http_client.post(f"{NITTER_BASE}/enablehls", data={"referer": path + "#m"})
+        await _nitter_request(http_client, "POST", f"{NITTER_BASE}/enablehls", data={"referer": path + "#m"})
 
-        response = await http_client.get(f"{NITTER_BASE}{path}")
+        response = await _nitter_request(http_client, "GET", f"{NITTER_BASE}{path}")
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -363,7 +374,7 @@ async def fetch_tweet_replies(tweet_url: str, http_client: httpx.AsyncClient | N
     path = tweet_url.replace(NITTER_BASE, "").split("#")[0]
 
     try:
-        response = await http_client.get(f"{NITTER_BASE}{path}")
+        response = await _nitter_request(http_client, "GET", f"{NITTER_BASE}{path}")
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
 
@@ -423,12 +434,56 @@ async def _fetch_feed(url: str, http_client: httpx.AsyncClient | None = None) ->
         http_client = httpx.AsyncClient(follow_redirects=True, timeout=10)
 
     try:
-        response = await http_client.get(url)
+        response = await _nitter_request(http_client, "GET", url)
         response.raise_for_status()
         return _parse_rss(response.text, feed_url=url)
     finally:
         if owns_client:
             await http_client.aclose()
+
+
+async def _nitter_request(
+    http_client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    **kwargs,
+) -> httpx.Response:
+    async with _NITTER_REQUEST_SEMAPHORE:
+        for attempt in range(1, NITTER_MAX_RETRIES + 1):
+            await _wait_for_nitter_request_slot()
+            response = await http_client.request(method, url, **kwargs)
+            if response.status_code not in NITTER_RETRY_STATUS_CODES:
+                return response
+
+            if attempt >= NITTER_MAX_RETRIES:
+                return response
+
+            retry_after = _parse_retry_after_seconds(response)
+            backoff = retry_after if retry_after is not None else NITTER_RETRY_BACKOFF_SECONDS * attempt
+            await asyncio.sleep(backoff)
+
+        raise RuntimeError(f"Nitter request retry loop exhausted for {method} {url}")
+
+
+async def _wait_for_nitter_request_slot() -> None:
+    global _NITTER_LAST_REQUEST_STARTED_AT
+
+    async with _NITTER_PACING_LOCK:
+        now = time.monotonic()
+        wait_seconds = (_NITTER_LAST_REQUEST_STARTED_AT + NITTER_MIN_INTERVAL_SECONDS) - now
+        if wait_seconds > 0:
+            await asyncio.sleep(wait_seconds)
+        _NITTER_LAST_REQUEST_STARTED_AT = time.monotonic()
+
+
+def _parse_retry_after_seconds(response: httpx.Response) -> float | None:
+    raw_value = str(response.headers.get("Retry-After", "")).strip()
+    if not raw_value:
+        return None
+    try:
+        return max(float(raw_value), 0.0)
+    except ValueError:
+        return None
 
 
 def _derive_title(text: str, limit: int = 120) -> str:

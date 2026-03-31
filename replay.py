@@ -1,13 +1,15 @@
 import asyncio
 import calendar
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from html import unescape
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import feedparser
 import httpx
@@ -26,10 +28,15 @@ from youtube_scraper import (
 WAYBACK_CDX_URL = "https://web.archive.org/cdx/search/cdx"
 WAYBACK_FETCH_DELAY_SECONDS = 1.0
 WAYBACK_SNAPSHOT_LIMIT = 10
+CDX_HTTP_TIMEOUT = httpx.Timeout(60.0, connect=10.0)
+SNAPSHOT_HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 REPLAY_HTTP_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 ARCTIC_SHIFT_URL = "https://arctic-shift.photon-reddit.com/api/posts/search"
 ARCTIC_SHIFT_PAGE_LIMIT = 100
 ARCTIC_SHIFT_MAX_PAGES = 20
+RSS_REPLAY_CONCURRENCY = 2
+REDDIT_REPLAY_CONCURRENCY = 3
+YOUTUBE_REPLAY_CONCURRENCY = 3
 
 EXTERNAL_REPLAYABLE_SOURCE_TYPES = {
     "rss",
@@ -58,56 +65,75 @@ class ReplayResult:
     skipped_sources: list[SourceSpec]
 
 
+@dataclass
+class ReplaySourceOutcome:
+    source: SourceSpec
+    local_articles: list[dict[str, Any]]
+    external_articles: list[dict[str, Any]]
+    skipped: bool
+
+
 async def replay_articles(
     sources: list[SourceSpec],
     start: datetime,
     end: datetime,
 ) -> ReplayResult:
+    print(
+        "[replay] start "
+        f"sources={len(sources)} "
+        f"start={start.isoformat()} "
+        f"end={end.isoformat()}"
+    )
+    rss_semaphore = asyncio.Semaphore(RSS_REPLAY_CONCURRENCY)
+    reddit_semaphore = asyncio.Semaphore(REDDIT_REPLAY_CONCURRENCY)
+    youtube_semaphore = asyncio.Semaphore(YOUTUBE_REPLAY_CONCURRENCY)
+
+    outcomes = await asyncio.gather(
+        *[
+            _replay_source(
+                source,
+                index=index,
+                total=len(sources),
+                start=start,
+                end=end,
+                rss_semaphore=rss_semaphore,
+                reddit_semaphore=reddit_semaphore,
+                youtube_semaphore=youtube_semaphore,
+            )
+            for index, source in enumerate(sources, start=1)
+        ]
+    )
+
     skipped: list[SourceSpec] = []
     all_articles: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     local_seen_ids: set[str] = set()
-    local_seen_ids_by_source: dict[tuple[str, str], set[str]] = {}
     observations: list[dict[str, Any]] = []
 
-    for source in sources:
+    for outcome in outcomes:
+        source = outcome.source
         source_type = str(source["type"]).strip().lower()
         source_feed = str(source["feed"]).strip()
-        source_key = (source_type, source_feed)
-
-        local_articles = _replay_local(source, start, end)
         local_ids_for_source: set[str] = set()
-        for article in local_articles:
+
+        for article in outcome.local_articles:
             article_id = str(article.get("id", "")).strip()
             if article_id:
                 local_seen_ids.add(article_id)
                 local_ids_for_source.add(article_id)
-        local_seen_ids_by_source[source_key] = local_ids_for_source
 
-        external_articles: list[dict[str, Any]] = []
-        if source_type in EXTERNAL_REPLAYABLE_SOURCE_TYPES:
-            try:
-                external_articles = await _replay_external(source, start, end)
-            except Exception as exc:
-                print(
-                    "[replay] external fetch failed for "
-                    f"{source_type} {source_feed}: {type(exc).__name__}: {exc!r}"
-                )
-
-        combined = local_articles + external_articles
-
-        if not combined and source_type in NON_REPLAYABLE_SOURCE_TYPES:
+        if outcome.skipped:
             skipped.append(source)
             continue
 
-        for article in combined:
+        for article in outcome.local_articles + outcome.external_articles:
             article_id = str(article.get("id", "")).strip()
             if not article_id or article_id in seen_ids:
                 continue
             seen_ids.add(article_id)
             all_articles.append(article)
 
-        for article in external_articles:
+        for article in outcome.external_articles:
             article_id = str(article.get("id", "")).strip()
             url = str(article.get("url", "")).strip()
             if not article_id or not url:
@@ -133,6 +159,10 @@ async def replay_articles(
         external_articles_to_write.append(article)
 
     if external_articles_to_write or observations:
+        print(
+            "[replay] writing cache "
+            f"articles={len(external_articles_to_write)} observations={len(observations)}"
+        )
         await asyncio.to_thread(
             _write_articles_sync,
             external_articles_to_write,
@@ -140,7 +170,109 @@ async def replay_articles(
         )
 
     all_articles.sort(key=_article_sort_key)
+    print(
+        "[replay] complete "
+        f"articles={len(all_articles)} skipped_sources={len(skipped)}"
+    )
     return ReplayResult(articles=all_articles, skipped_sources=skipped)
+
+
+async def replay_from_saved_output(
+    output_path: str | Path,
+    start: datetime,
+    end: datetime,
+) -> ReplayResult:
+    sources = load_sources_from_saved_output(output_path)
+    return await replay_articles(sources, start, end)
+
+
+def load_sources_from_saved_output(output_path: str | Path) -> list[SourceSpec]:
+    payload = json.loads(Path(output_path).expanduser().read_text(encoding="utf-8"))
+    return extract_replay_sources(payload)
+
+
+def extract_replay_sources(payload: dict[str, Any]) -> list[SourceSpec]:
+    candidates: Any = None
+    if isinstance(payload.get("final_config"), dict):
+        final_sources = payload["final_config"].get("sources")
+        if isinstance(final_sources, list):
+            candidates = final_sources
+    if candidates is None and isinstance(payload.get("merged_sources"), list):
+        candidates = payload.get("merged_sources")
+    if candidates is None and isinstance(payload.get("sources"), list):
+        candidates = payload.get("sources")
+    if candidates is None:
+        raise ValueError(
+            "Saved output did not contain replayable sources. Expected final_config.sources, "
+            "merged_sources, or sources."
+        )
+
+    sources: list[SourceSpec] = []
+    for index, item in enumerate(candidates):
+        if not isinstance(item, dict):
+            raise ValueError(f"Source at index {index} is not an object")
+        source_type = str(item.get("type", "")).strip()
+        feed = str(item.get("feed", "")).strip()
+        if not source_type or not feed:
+            raise ValueError(f"Source at index {index} is missing type/feed")
+        sources.append(_canonicalize_saved_source_spec(SourceSpec(type=source_type, feed=feed)))
+    return sources
+
+
+def _canonicalize_saved_source_spec(source: SourceSpec) -> SourceSpec:
+    source_type = str(source["type"]).strip().lower()
+    feed = str(source["feed"]).strip()
+
+    if source_type == "rss":
+        youtube_channel_id = _extract_youtube_channel_id_from_feed_url(feed)
+        if youtube_channel_id:
+            return SourceSpec(type="youtube_channel", feed=youtube_channel_id)
+
+        reddit_subreddit = _extract_reddit_subreddit_name(feed)
+        if reddit_subreddit:
+            return SourceSpec(type="reddit_subreddit", feed=reddit_subreddit)
+
+        reddit_query = _extract_reddit_search_query(feed)
+        if reddit_query:
+            return SourceSpec(type="reddit_search", feed=reddit_query)
+
+    return SourceSpec(type=source_type, feed=feed)
+
+
+def _extract_youtube_channel_id_from_feed_url(value: str) -> str | None:
+    parsed = urlparse(value)
+    if parsed.netloc.lower() not in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
+        return None
+    if parsed.path != "/feeds/videos.xml":
+        return None
+    for channel_id in parse_qs(parsed.query).get("channel_id", []):
+        normalized = str(channel_id).strip()
+        if normalized:
+            return normalized
+    return None
+
+
+def _extract_reddit_subreddit_name(value: str) -> str | None:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or "reddit.com" not in parsed.netloc.lower():
+        return None
+    path_parts = [part for part in parsed.path.split("/") if part]
+    if len(path_parts) >= 2 and path_parts[0].lower() == "r":
+        candidate = unquote(path_parts[1]).strip()
+        return candidate or None
+    return None
+
+
+def _extract_reddit_search_query(value: str) -> str | None:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or "reddit.com" not in parsed.netloc.lower():
+        return None
+    query_values = parse_qs(parsed.query).get("q", [])
+    for query in query_values:
+        normalized = unquote(str(query)).strip()
+        if normalized:
+            return normalized
+    return None
 
 
 def _replay_local(
@@ -156,6 +288,70 @@ def _replay_local(
         )
     except Exception:
         return []
+
+
+async def _replay_source(
+    source: SourceSpec,
+    *,
+    index: int,
+    total: int,
+    start: datetime,
+    end: datetime,
+    rss_semaphore: asyncio.Semaphore,
+    reddit_semaphore: asyncio.Semaphore,
+    youtube_semaphore: asyncio.Semaphore,
+) -> ReplaySourceOutcome:
+    source_type = str(source["type"]).strip().lower()
+    source_feed = str(source["feed"]).strip()
+    print(f"[replay] source {index}/{total} start {source_type} {source_feed}")
+
+    local_articles = _replay_local(source, start, end)
+    external_articles: list[dict[str, Any]] = []
+    if source_type in EXTERNAL_REPLAYABLE_SOURCE_TYPES:
+        semaphore = _select_replay_semaphore(
+            source_type,
+            rss_semaphore=rss_semaphore,
+            reddit_semaphore=reddit_semaphore,
+            youtube_semaphore=youtube_semaphore,
+        )
+        try:
+            async with semaphore:
+                external_articles = await _replay_external(source, start, end)
+        except Exception as exc:
+            print(
+                "[replay] external fetch failed for "
+                f"{source_type} {source_feed}: {type(exc).__name__}: {exc!r}"
+            )
+
+    combined_count = len(local_articles) + len(external_articles)
+    skipped = combined_count == 0 and source_type in NON_REPLAYABLE_SOURCE_TYPES
+    print(
+        f"[replay] source {index}/{total} done "
+        f"{source_type} {source_feed} "
+        f"local={len(local_articles)} external={len(external_articles)} combined={combined_count}"
+    )
+    return ReplaySourceOutcome(
+        source=source,
+        local_articles=local_articles,
+        external_articles=external_articles,
+        skipped=skipped,
+    )
+
+
+def _select_replay_semaphore(
+    source_type: str,
+    *,
+    rss_semaphore: asyncio.Semaphore,
+    reddit_semaphore: asyncio.Semaphore,
+    youtube_semaphore: asyncio.Semaphore,
+) -> asyncio.Semaphore:
+    if source_type == "rss":
+        return rss_semaphore
+    if source_type.startswith("reddit_"):
+        return reddit_semaphore
+    if source_type.startswith("youtube_"):
+        return youtube_semaphore
+    return rss_semaphore
 
 
 async def _replay_external(
@@ -227,7 +423,7 @@ async def _replay_rss_wayback(
         "collapse": "digest",
     }
 
-    async with httpx.AsyncClient(timeout=REPLAY_HTTP_TIMEOUT, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=CDX_HTTP_TIMEOUT, follow_redirects=True) as client:
         try:
             cdx_response = await client.get(WAYBACK_CDX_URL, params=params)
             cdx_response.raise_for_status()
@@ -251,6 +447,7 @@ async def _replay_rss_wayback(
 
             snapshot_url = f"https://web.archive.org/web/{timestamp}/{feed_url}"
             try:
+                client.timeout = SNAPSHOT_HTTP_TIMEOUT
                 snapshot_response = await client.get(snapshot_url)
                 snapshot_response.raise_for_status()
                 snapshot_text = snapshot_response.text
@@ -269,7 +466,11 @@ async def _replay_rss_wayback(
             for entry in list(getattr(parsed, "entries", []) or []):
                 try:
                     article = _normalize_rss_entry(entry, feed_url, getattr(parsed, "feed", {}) or {})
-                except Exception:
+                except Exception as exc:
+                    print(
+                        "[replay] rss entry normalization failed for "
+                        f"{feed_url} at {timestamp}: {type(exc).__name__}: {exc}"
+                    )
                     continue
                 if article is None:
                     continue
@@ -721,4 +922,61 @@ def _nested_str(value: dict[str, Any], *path: str) -> str:
     return str(current or "").strip()
 
 
-__all__ = ["ReplayResult", "replay_articles"]
+def _parse_cli_datetime(value: str) -> datetime:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        raise ValueError(f"Invalid datetime value: {value}")
+    return parsed
+
+
+async def _main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Replay historical articles from a saved run output")
+    parser.add_argument("input", help="Path to output.json, sources.json, or a final_config-like JSON file")
+    parser.add_argument("--start", required=True, help="ISO datetime, e.g. 2026-03-01T00:00:00Z")
+    parser.add_argument("--end", required=True, help="ISO datetime, e.g. 2026-03-31T23:59:59Z")
+    parser.add_argument("--limit", type=int, default=10, help="How many articles to include in the printed preview")
+    args = parser.parse_args()
+
+    result = await replay_from_saved_output(
+        args.input,
+        _parse_cli_datetime(args.start),
+        _parse_cli_datetime(args.end),
+    )
+    preview = [
+        {
+            "id": article.get("id"),
+            "title": article.get("title"),
+            "url": article.get("url"),
+            "published_at": article.get("published_at"),
+            "source_name": article.get("source_name"),
+            "source_type": article.get("source_type"),
+        }
+        for article in result.articles[: args.limit]
+    ]
+    print(
+        json.dumps(
+            {
+                "input": str(Path(args.input).expanduser()),
+                "article_count": len(result.articles),
+                "skipped_sources": result.skipped_sources,
+                "articles": preview,
+            },
+            indent=2,
+            ensure_ascii=True,
+        )
+    )
+
+
+__all__ = [
+    "ReplayResult",
+    "extract_replay_sources",
+    "load_sources_from_saved_output",
+    "replay_articles",
+    "replay_from_saved_output",
+]
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())

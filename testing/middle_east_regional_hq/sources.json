@@ -1,0 +1,341 @@
+{
+  "topic": "Western companies creating regional headquarters in saudi arabia or UAE",
+  "dispatch": {
+    "agents": [
+      "rss",
+      "youtube",
+      "reddit",
+      "nitter"
+    ],
+    "reasons": {
+      "rss": "Major business and financial news outlets (Reuters, Bloomberg, FT, BBC) frequently cover corporate expansions and regional HQ announcements in the Gulf, making RSS a primary source for breaking and in-depth news.",
+      "youtube": "Business news channels, conference talks, and documentary-style content covering Vision 2030, UAE economic initiatives, and corporate strategy announcements are widely available on YouTube.",
+      "reddit": "Subreddits like r/saudiarabia, r/dubai, r/UAE, r/business, and r/Economics host discussions from expats, business professionals, and analysts about the implications and realities of companies setting up in the region.",
+      "nitter": "Business journalists, economists, executives, and Gulf-focused analysts frequently tweet about new HQ announcements, policy changes, and corporate trends in Saudi Arabia and the UAE in real time."
+    }
+  },
+  "source_agent_outputs": [
+    {
+      "agent": "rss",
+      "sources": [
+        {
+          "type": "rss",
+          "feed": "https://gulfbusiness.com/feed/"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=Western+companies+regional+headquarters+Saudi+Arabia+UAE"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=company+headquarters+Riyadh+Dubai+investment+foreign+business"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=Saudi+Arabia+Vision+2030+foreign+companies+headquarters+Riyadh+Program"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=multinational+companies+HQ+relocation+Middle+East+Gulf"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=site%3Aarabnews.com+regional+headquarters+foreign+investment+Saudi"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=site%3Aarabianbusiness.com+regional+headquarters"
+        },
+        {
+          "type": "rss",
+          "feed": "https://news.google.com/rss/search?q=site%3Azawya.com+regional+headquarters+foreign+investment+Gulf"
+        }
+      ],
+      "notes": "8 sources covering Western/multinational companies setting up regional HQs in Saudi Arabia and the UAE. 1 native RSS feed (Gulf Business, a leading Dubai-based business outlet with active coverage). 7 Google News feeds: two broad cross-publisher queries (general HQ/relocation framing + Vision 2030 angle), one specifically on the Riyadh deadline/foreign business, and three site-scoped feeds pinned to Arab News (Saudi-focused; strong on Saudi RHQ programme milestones like \"780 firms move to Riyadh\"), Arabian Business (Gulf-wide; covers individual company HQ announcements like Moody's, Visa CEMEA), and Zawya (MENA financial wire; covers ADIO-backed HQs, Vision 2030 targets). Together they cover both the UAE free-zone pull (DIFC/ADGM) and Saudi Arabia's mandated RHQ programme push."
+    },
+    {
+      "agent": "youtube",
+      "sources": [
+        {
+          "type": "youtube_channel",
+          "feed": "UCdqOPv2Q68yQWs2PxVyzyCQ"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCkXOwoXbdLeMo7T9FuJv4Qw"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCJB7HQy4OojxiDy0r8mV4Tg"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCdPcb-4m7Z03zufqBrsAYng"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCI8DegIWgK51cGakXcf1dOQ"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCIZJ9a6P_nxCFJTmL0gh_IQ"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCNye-wNBqNL5ZzHSJj3l8Bg"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCF8HUTbUwPKh2Q-KpGOCVGw"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCIALMKvObZNtJ6AmdCLP7Lg"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UCoUxsWakJucWg46KW5RsvPw"
+        },
+        {
+          "type": "youtube_channel",
+          "feed": "UC4g_sfhdDXZVG7xqwY10hMg"
+        }
+      ],
+      "notes": "11 sources covering the topic from three angles: (1) Gulf/regional specialists \u2014 Arabian Business (52K subs, comprehensive Middle East business), Economy Middle East (57K, independent economic news), MEED/Middle East Economic Digest (3.9K, senior management-focused digest), Gulf Business (3.6K, GCC-focused), Arab News (142K, Saudi Arabia's flagship English paper), Al Arabiya English (903K, Dubai-based English news); (2) broader Middle East news \u2014 Al Jazeera English (17.8M) for political-economic context; (3) global business media that regularly covers Gulf FDI and corporate relocation \u2014 CNBC International Live (480K, explicitly covers Middle East), Bloomberg Television (3.1M), Financial Times (1.4M), and Oxford Business Group (4.3K, research/advisory firm with dedicated Gulf economy coverage)."
+    },
+    {
+      "agent": "reddit",
+      "sources": [
+        {
+          "type": "reddit_subreddit",
+          "feed": "dubai"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "UAE"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "saudiarabia"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "KingdomofSaudiArabia"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "DubaiCentral"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "DubaiJobs"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "Khaleeji"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "MiddleEastNews"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "MiddleEast"
+        },
+        {
+          "type": "reddit_subreddit",
+          "feed": "GCCTechBuilders"
+        }
+      ],
+      "notes": "10 subreddits selected for breadth across Gulf business, expat, and regional news coverage:\n\n- r/dubai (535K) and r/UAE (285K) are the largest, most active communities covering business and corporate developments in the UAE.\n- r/saudiarabia (187K) and r/KingdomofSaudiArabia (45K) cover Saudi-specific news including Vision 2030 corporate inflows.\n- r/DubaiCentral (63K) provides additional Dubai/UAE discussion breadth.\n- r/DubaiJobs (35K) is a strong signal source \u2014 company HQ relocations generate job postings and discussion here.\n- r/Khaleeji covers the entire GCC (UAE, Saudi, Qatar, Kuwait, Bahrain, Oman) and frequently surfaces regional business policy discussion.\n- r/MiddleEastNews (16K) and r/MiddleEast (10K) catch geopolitical and economic stories about Western corporate engagement in the region.\n- r/GCCTechBuilders is a newer, niche community specifically for founders and businesses building across the GCC \u2014 high signal for tech-sector HQ moves."
+    },
+    {
+      "agent": "nitter",
+      "sources": [
+        {
+          "type": "nitter_user",
+          "feed": "DIFC"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "ADGlobalMarket"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "ArabianBusiness"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "GulfBusiness"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "TheNationalNews"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "Zawya"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "AlArabiya_Eng"
+        },
+        {
+          "type": "nitter_user",
+          "feed": "SaudiVision2030"
+        }
+      ],
+      "notes": "8 verified, active sources covering Western company HQ expansion into Saudi Arabia and the UAE from multiple angles:\n\n- **DIFC**: Dubai International Financial Centre \u2014 official account announcing new company registrations and expansions into the Dubai free zone; one of the top destinations for Western firms' MENA HQs.\n- **ADGlobalMarket**: Abu Dhabi Global Market \u2014 directly reports Western asset managers and multinationals opening offices in Abu Dhabi (e.g., Muzinich & Co.); very high-signal for this topic.\n- **ArabianBusiness**: Leading English-language Gulf business media; covers corporate moves, investment decisions, and founder/exec sentiment in the region.\n- **GulfBusiness**: Broad Gulf business news covering trade, investment, and corporate strategy across KSA and UAE.\n- **TheNationalNews**: UAE newspaper of record (Abu Dhabi Media); covers policy changes, major corporate announcements, and economic strategy.\n- **Zawya**: LSEG/Reuters-backed MENA financial wire; tracks company filings, M&A, and business news across Saudi Arabia and UAE.\n- **AlArabiya_Eng**: English-language Al Arabiya; covers Saudi economy, Vision 2030 milestones, and the RHQ program (30-year tax breaks to multinationals moving HQs to Riyadh).\n- **SaudiVision2030**: Official Saudi Vision 2030 programme account; announces economic reforms and milestones relevant to attracting foreign corporate presence (posts mostly in Arabic).\n\nNote: Many official Saudi investment authority handles (MISA_KSA, invest_saudi, RHQ_Program) returned 404 on Nitter."
+    }
+  ],
+  "merged_sources": [
+    {
+      "type": "rss",
+      "feed": "https://gulfbusiness.com/feed/"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=Western+companies+regional+headquarters+Saudi+Arabia+UAE"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=company+headquarters+Riyadh+Dubai+investment+foreign+business"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=Saudi+Arabia+Vision+2030+foreign+companies+headquarters+Riyadh+Program"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=multinational+companies+HQ+relocation+Middle+East+Gulf"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=site%3Aarabnews.com+regional+headquarters+foreign+investment+Saudi"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=site%3Aarabianbusiness.com+regional+headquarters"
+    },
+    {
+      "type": "rss",
+      "feed": "https://news.google.com/rss/search?q=site%3Azawya.com+regional+headquarters+foreign+investment+Gulf"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCdqOPv2Q68yQWs2PxVyzyCQ"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCkXOwoXbdLeMo7T9FuJv4Qw"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCJB7HQy4OojxiDy0r8mV4Tg"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCdPcb-4m7Z03zufqBrsAYng"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCI8DegIWgK51cGakXcf1dOQ"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCIZJ9a6P_nxCFJTmL0gh_IQ"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCNye-wNBqNL5ZzHSJj3l8Bg"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCF8HUTbUwPKh2Q-KpGOCVGw"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCIALMKvObZNtJ6AmdCLP7Lg"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UCoUxsWakJucWg46KW5RsvPw"
+    },
+    {
+      "type": "youtube_channel",
+      "feed": "UC4g_sfhdDXZVG7xqwY10hMg"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "dubai"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "UAE"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "saudiarabia"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "KingdomofSaudiArabia"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "DubaiCentral"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "DubaiJobs"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "Khaleeji"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "MiddleEastNews"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "MiddleEast"
+    },
+    {
+      "type": "reddit_subreddit",
+      "feed": "GCCTechBuilders"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "DIFC"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "ADGlobalMarket"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "ArabianBusiness"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "GulfBusiness"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "TheNationalNews"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "Zawya"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "AlArabiya_Eng"
+    },
+    {
+      "type": "nitter_user",
+      "feed": "SaudiVision2030"
+    }
+  ]
+}
