@@ -1,9 +1,9 @@
 import asyncio
 from typing import Any
 
-from pipeline import run_pipeline
-from pipeline_schema import deserialize_pipeline
-from runner import fetch_articles
+from app.pipeline import run_pipeline
+from app.pipeline_schema import deserialize_pipeline
+from app.runner import fetch_articles
 
 from .logging import article_log_summary, log
 from .types import SourceAgentOutput

@@ -1,4 +1,4 @@
-"""Wraps run_pipeline_agent.py as a subprocess to build a feed config from a topic."""
+"""Wraps app/run_pipeline_agent.py as a subprocess to build a feed config from a topic."""
 
 import asyncio
 import json
@@ -9,13 +9,13 @@ ROOT = Path(__file__).parent.parent.parent
 
 
 async def build_feed(topic: str, max_iterations: int = 2) -> dict:
-    """Run run_pipeline_agent.py and return the parsed full result dict.
+    """Run app/run_pipeline_agent.py and return the parsed full result dict.
 
     Raises RuntimeError if the subprocess exits non-zero.
     """
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
-        str(ROOT / "run_pipeline_agent.py"),
+        str(ROOT / "app" / "run_pipeline_agent.py"),
         topic,
         "--max-iterations",
         str(max_iterations),

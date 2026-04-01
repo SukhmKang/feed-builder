@@ -9,9 +9,9 @@ ROOT = Path(__file__).parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pipeline.core import run_pipeline  # noqa: E402
-from pipeline_schema import deserialize_pipeline  # noqa: E402
-from runner import fetch_articles  # noqa: E402
+from app.pipeline.core import run_pipeline  # noqa: E402
+from app.pipeline_schema import deserialize_pipeline  # noqa: E402
+from app.runner import fetch_articles  # noqa: E402
 
 
 async def fetch_and_filter(config: dict[str, Any]) -> list[dict[str, Any]]:

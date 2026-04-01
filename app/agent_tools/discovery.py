@@ -8,18 +8,18 @@ from claude_agent_sdk import tool
 from dotenv import load_dotenv
 from tavily import AsyncTavilyClient
 
-from discover_feeds import discover_feeds_detailed
-from google_news import google_news_search_feed_url
-from reddit import get_subreddit_from_post, search_subreddits_by_topic, subreddit_feed_url
-from rsscatalog import get_category_feeds, search_categories as search_rsscatalog_categories
-from youtube_scraper import (
+from app.discover_feeds import discover_feeds_detailed
+from app.google_news import google_news_search_feed_url
+from app.reddit import get_subreddit_from_post, search_subreddits_by_topic, subreddit_feed_url
+from app.rsscatalog import get_category_feeds, search_categories as search_rsscatalog_categories
+from app.youtube_scraper import (
     get_channel_feed as get_youtube_channel_feed,
     get_channel_from_video,
     search_channels_by_topic,
     search_videos_direct_by_topic,
 )
 
-from agent_tools.common import MAX_PREVIEW_LIMIT, error, success, truncate_text, youtube_video_preview
+from app.agent_tools.common import MAX_PREVIEW_LIMIT, error, success, truncate_text, youtube_video_preview
 
 load_dotenv()
 

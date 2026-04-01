@@ -1,7 +1,7 @@
 from typing import Any
 
-from llm import generate_text
-from pipeline_schema import deserialize_pipeline
+from app.llm import generate_text
+from app.pipeline_schema import deserialize_pipeline
 
 from .logging import log
 from .prompts import (

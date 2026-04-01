@@ -7,8 +7,8 @@ from typing import Any
 
 from claude_agent_sdk import tool
 
-from agent_tools.common import error, success
-from pipeline_schema import deserialize_pipeline
+from app.agent_tools.common import error, success
+from app.pipeline_schema import deserialize_pipeline
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOTENV_PATH = PROJECT_ROOT / ".env"

@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from pipeline import (
+from app.pipeline import (
     And,
     Conditional,
     CustomBlock,
@@ -30,7 +30,7 @@ from pipeline import (
     TagExistsCondition,
     TagMatchesCondition,
 )
-from pipeline.core import Block, Condition
+from app.pipeline.core import Block, Condition
 
 PIPELINE_SCHEMA_PROMPT = """
 You must return a JSON array of pipeline blocks.

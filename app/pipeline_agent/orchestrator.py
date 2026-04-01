@@ -13,7 +13,7 @@ Workflow:
 import asyncio
 from typing import Any
 
-from critic import run_critic
+from app.critic import run_critic
 
 from .evaluation import evaluate_pipeline, merge_source_agent_outputs
 from .logging import log

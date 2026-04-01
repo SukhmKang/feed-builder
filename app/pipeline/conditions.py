@@ -5,8 +5,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from llm import generate_text
-from pipeline.core import (
+from app.llm import generate_text
+from app.pipeline.core import (
     DEFAULT_KEYWORD_FIELDS,
     Condition,
     collect_search_text,
@@ -21,7 +21,7 @@ from pipeline.core import (
     tag_matches_pattern,
     value_exists,
 )
-from pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
+from app.pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
 
 LLM_CONDITION_MAX_ATTEMPTS = 2
 LLM_CONDITION_SCHEMA_EXAMPLE = {

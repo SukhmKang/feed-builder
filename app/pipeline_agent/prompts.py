@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from pipeline_schema import PIPELINE_SCHEMA_PROMPT
+from app.pipeline_schema import PIPELINE_SCHEMA_PROMPT
 
 
 PIPELINE_BUILDER_TOOL_NAMES = [

@@ -21,8 +21,8 @@ from claude_agent_sdk import (
     tool,
 )
 
-from agent_tools import CUSTOM_BLOCK_TOOLS, DISCOVERY_TOOLS, FEED_TOOLS, UTILITY_TOOLS
-from pipeline_schema import deserialize_pipeline
+from app.agent_tools import CUSTOM_BLOCK_TOOLS, DISCOVERY_TOOLS, FEED_TOOLS, UTILITY_TOOLS
+from app.pipeline_schema import deserialize_pipeline
 
 from .evaluation import validate_live_sources
 from .logging import log, should_retry_agent_error

@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from tavily import AsyncTavilyClient
 
-from llm import generate_text
+from app.llm import generate_text
 
 SEARCH_RESULT_LIMIT = 8
 REDDIT_MAX_RETRIES = 4

@@ -2,10 +2,10 @@
 
 from claude_agent_sdk import create_sdk_mcp_server
 
-from agent_tools.custom_blocks import CUSTOM_BLOCK_TOOLS
-from agent_tools.discovery import DISCOVERY_TOOLS
-from agent_tools.environment import UTILITY_TOOLS
-from agent_tools.feeds import FEED_TOOLS
+from app.agent_tools.custom_blocks import CUSTOM_BLOCK_TOOLS
+from app.agent_tools.discovery import DISCOVERY_TOOLS
+from app.agent_tools.environment import UTILITY_TOOLS
+from app.agent_tools.feeds import FEED_TOOLS
 
 TOOLS = [*DISCOVERY_TOOLS, *FEED_TOOLS, *CUSTOM_BLOCK_TOOLS, *UTILITY_TOOLS]
 

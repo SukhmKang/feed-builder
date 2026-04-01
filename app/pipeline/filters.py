@@ -4,8 +4,8 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from llm import generate_text
-from pipeline.core import (
+from app.llm import generate_text
+from app.pipeline.core import (
     Block,
     BlockResult,
     collect_search_text,
@@ -18,8 +18,8 @@ from pipeline.core import (
     merge_tags,
     run_pipeline,
 )
-from pipeline.conditions import Condition
-from pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
+from app.pipeline.conditions import Condition
+from app.pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
 
 """
 Pipeline block contracts.
@@ -316,7 +316,7 @@ class CustomBlock:
     """Load and execute a custom block from the `custom_blocks` package.
 
     Contract:
-    - Loads `custom_blocks.<name>` at initialization time.
+    - Loads `app.custom_blocks.<name>` at initialization time.
     - Expects that module to expose `async def run(article: dict) -> BlockResult`.
     - Delegates execution to that `run(...)` function unchanged.
     """
@@ -328,10 +328,10 @@ class CustomBlock:
         self._fn = self._load(self.name)
 
     def _load(self, name: str) -> Any:
-        module = importlib.import_module(f"custom_blocks.{name}")
+        module = importlib.import_module(f"app.custom_blocks.{name}")
         run_fn = getattr(module, "run", None)
         if run_fn is None:
-            raise ValueError(f"custom_blocks.{name} does not define a run(article) function")
+            raise ValueError(f"app.custom_blocks.{name} does not define a run(article) function")
         return run_fn
 
     async def run(self, article: dict[str, Any]) -> BlockResult:

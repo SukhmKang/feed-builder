@@ -15,10 +15,10 @@ import feedparser
 import httpx
 from bs4 import BeautifulSoup
 
-from reddit import search_subreddits_by_topic, subreddit_feed_url
-from runner import SourceSpec, _enrich_articles_with_youtube_transcripts, _youtube_video_to_article
-from stream_history import _write_articles_sync, replay_stream_from_cache
-from youtube_scraper import (
+from app.reddit import search_subreddits_by_topic, subreddit_feed_url
+from app.runner import SourceSpec, _enrich_articles_with_youtube_transcripts, _youtube_video_to_article
+from app.stream_history import _write_articles_sync, replay_stream_from_cache
+from app.youtube_scraper import (
     _youtube_get,
     get_channel_feed,
     search_channels_by_topic,

@@ -11,9 +11,9 @@ from typing import Any
 
 from claude_agent_sdk import tool
 
-from agent_tools.common import error, success
-from pipeline import CustomBlock
-from pipeline.core import cosine_similarity, embed_text
+from app.agent_tools.common import error, success
+from app.pipeline import CustomBlock
+from app.pipeline.core import cosine_similarity, embed_text
 
 CUSTOM_BLOCKS_DIR = Path(__file__).resolve().parent.parent / "custom_blocks"
 CUSTOM_BLOCK_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -147,7 +147,7 @@ def _write_registry(data: dict[str, Any]) -> None:
 
 
 def _reload_custom_block_module(name: str) -> None:
-    module_name = f"custom_blocks.{name}"
+    module_name = f"app.custom_blocks.{name}"
     importlib.invalidate_caches()
     sys.modules.pop(module_name, None)
 
@@ -193,7 +193,7 @@ async def list_custom_blocks_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "read_custom_block",
-    "Read the source code of a custom block module from custom_blocks/.",
+    "Read the source code of a custom block module from app/custom_blocks/.",
     {
         "type": "object",
         "additionalProperties": False,
@@ -230,7 +230,7 @@ async def get_custom_block_docs_tool(args: dict[str, Any]) -> dict[str, Any]:
     example_code = '''from dataclasses import dataclass
 from typing import Any
 
-from pipeline.core import BlockResult, copy_article
+from app.pipeline.core import BlockResult, copy_article
 
 
 @dataclass(slots=True)
@@ -269,7 +269,7 @@ class ExampleBlock:
 
 @tool(
     "write_custom_block",
-    "Create or overwrite a custom block module in custom_blocks/.",
+    "Create or overwrite a custom block module in app/custom_blocks/.",
     {
         "type": "object",
         "additionalProperties": False,
@@ -314,7 +314,7 @@ async def write_custom_block_tool(args: dict[str, Any]) -> dict[str, Any]:
 
 @tool(
     "delete_custom_block",
-    "Delete a custom block module from custom_blocks/.",
+    "Delete a custom block module from app/custom_blocks/.",
     {
         "type": "object",
         "additionalProperties": False,

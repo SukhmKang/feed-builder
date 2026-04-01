@@ -1,4 +1,4 @@
-from pipeline.conditions import (
+from app.pipeline.conditions import (
     And,
     DomainCondition,
     FieldContainsCondition,
@@ -21,8 +21,8 @@ from pipeline.conditions import (
     TagExistsCondition,
     TagMatchesCondition,
 )
-from pipeline.core import Block, BlockResult, Condition, PipelineResult, run_pipeline
-from pipeline.filters import Conditional, CustomBlock, KeywordFilter, LLMFilter, SemanticSimilarity, Switch
+from app.pipeline.core import Block, BlockResult, Condition, PipelineResult, run_pipeline
+from app.pipeline.filters import Conditional, CustomBlock, KeywordFilter, LLMFilter, SemanticSimilarity, Switch
 
 __all__ = [
     "And",

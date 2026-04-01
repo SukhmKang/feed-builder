@@ -5,7 +5,7 @@ import asyncio
 import json
 from pathlib import Path
 
-from pipeline_agent import build_feed_config, build_feed_config_from_sources, build_sources_for_topic
+from app.pipeline_agent import build_feed_config, build_feed_config_from_sources, build_sources_for_topic
 
 
 def _build_parser() -> argparse.ArgumentParser:

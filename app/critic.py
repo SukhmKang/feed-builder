@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from llm import generate_text
+from app.llm import generate_text
 
 CRITIC_PROVIDER = "anthropic"
 CRITIC_MAX_ATTEMPTS = 2

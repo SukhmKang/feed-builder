@@ -113,12 +113,12 @@ from html import unescape
 from typing import Any, TypedDict
 from urllib.parse import parse_qs, quote, urlparse
 
-from google_news import google_news_search_feed_url, is_google_news_search_feed_url
-from nitter import fetch_search_feed, fetch_user_feed
-from reddit import fetch_search_articles, fetch_subreddit_articles, search_subreddits_by_topic
-from rss import FeedBatchError, fetch_rss_articles
-from stream_history import _write_articles_sync
-from youtube_scraper import (
+from app.google_news import google_news_search_feed_url, is_google_news_search_feed_url
+from app.nitter import fetch_search_feed, fetch_user_feed
+from app.reddit import fetch_search_articles, fetch_subreddit_articles, search_subreddits_by_topic
+from app.rss import FeedBatchError, fetch_rss_articles
+from app.stream_history import _write_articles_sync
+from app.youtube_scraper import (
     get_channel_feed,
     search_channels_by_topic,
     search_videos_by_topic,
