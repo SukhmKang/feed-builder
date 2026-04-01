@@ -6,7 +6,7 @@ from typing import Any
 import anthropic
 import openai
 
-DEFAULT_ANTHROPIC_MAX_TOKENS = 1024
+DEFAULT_MAX_TOKENS = 1024
 
 
 class LLMProviderError(RuntimeError):
@@ -72,7 +72,7 @@ def _create_message(
             kwargs: dict[str, Any] = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
-                "max_tokens": max_tokens if max_tokens is not None else DEFAULT_ANTHROPIC_MAX_TOKENS,
+                "max_tokens": max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS,
             }
             if system:
                 kwargs["system"] = system
@@ -84,8 +84,7 @@ def _create_message(
                 "model": model,
                 "messages": _build_openai_messages(prompt, system=system),
             }
-            if max_tokens is not None:
-                kwargs["max_completion_tokens"] = max_tokens
+            kwargs["max_completion_tokens"] = max_tokens if max_tokens is not None else DEFAULT_MAX_TOKENS
             if json_output and "response_format" not in model_params:
                 kwargs["response_format"] = {"type": "json_object"}
             kwargs.update(model_params)

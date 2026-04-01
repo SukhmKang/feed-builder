@@ -19,7 +19,7 @@ load_dotenv()
 
 VISION_API_URL = "https://vision.googleapis.com/v1/images:annotate"
 
-NITTER_BASE = "http://nitter.sknitterinstance.com"
+NITTER_BASE = os.environ.get("NITTER_BASE", "https://nitter.sknitterinstance.com")
 DC_NS = "http://purl.org/dc/elements/1.1/"
 NITTER_MAX_CONCURRENT_REQUESTS = 1
 NITTER_MIN_INTERVAL_SECONDS = 1.0

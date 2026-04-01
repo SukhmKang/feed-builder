@@ -1,6 +1,8 @@
 import type { Article, Feed } from "../types";
 
-const BASE = "";
+// In dev, leave empty so Vite's proxy handles it.
+// In production, set VITE_API_URL=https://api.yourdomain.com
+const BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(BASE + path, {

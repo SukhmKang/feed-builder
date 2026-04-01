@@ -1,0 +1,360 @@
+import asyncio
+import json
+from pathlib import Path
+from typing import Any
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ClaudeSDKClient,
+    ResultMessage,
+    SessionMessage,
+    SystemMessage,
+    TaskNotificationMessage,
+    TaskProgressMessage,
+    TaskStartedMessage,
+    TextBlock,
+    ToolResultBlock,
+    ToolUseBlock,
+    UserMessage,
+    create_sdk_mcp_server,
+    tool,
+)
+
+from agent_tools import CUSTOM_BLOCK_TOOLS, DISCOVERY_TOOLS, FEED_TOOLS, UTILITY_TOOLS
+from pipeline_schema import deserialize_pipeline
+
+from .evaluation import validate_live_sources
+from .logging import log, should_retry_agent_error
+from .source_specs import normalize_submitted_source_spec
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_AGENT_MAX_ATTEMPTS = 3
+DEFAULT_AGENT_MAX_BUDGET_USD = 5.0
+SOURCE_AGENT_NAMES = ("rss", "youtube", "reddit", "nitter")
+
+TOOL_BY_NAME = {
+    tool.name: tool
+    for tool in [*DISCOVERY_TOOLS, *FEED_TOOLS, *CUSTOM_BLOCK_TOOLS, *UTILITY_TOOLS]
+}
+
+
+async def run_agent_with_submission(
+    prompt: str,
+    *,
+    system_prompt: str,
+    tool_names: list[str],
+    model: str,
+    max_turns: int = 10,
+    agent_name: str,
+    verbose: bool,
+    submission_tool: Any,
+) -> Any:
+    last_error: Exception | None = None
+    for attempt in range(1, DEFAULT_AGENT_MAX_ATTEMPTS + 1):
+        log(
+            verbose,
+            f"{agent_name}.attempt_start",
+            {
+                "attempt": attempt,
+                "max_attempts": DEFAULT_AGENT_MAX_ATTEMPTS,
+                "model": model,
+                "tool_names": tool_names,
+                "max_turns": max_turns,
+                "system_prompt": system_prompt,
+                "prompt": prompt,
+            },
+        )
+        submission_store: dict[str, Any] = {"value": None}
+        wrapped_submission_tool = submission_tool(submission_store)
+        options = ClaudeAgentOptions(
+            system_prompt=system_prompt,
+            mcp_servers={
+                "feed_builder_tools": build_sdk_server(
+                    "feed_builder_tools",
+                    tool_names,
+                    extra_tools=[wrapped_submission_tool],
+                )
+            },
+            permission_mode="bypassPermissions",
+            model=model,
+            max_turns=max_turns,
+            max_budget_usd=DEFAULT_AGENT_MAX_BUDGET_USD,
+            cwd=PROJECT_ROOT,
+        )
+        try:
+            async with ClaudeSDKClient(options) as client:
+                await client.query(prompt)
+                await collect_final_text(client, agent_name=agent_name, verbose=verbose)
+
+            if submission_store["value"] is None:
+                raise ValueError(f"{agent_name} agent did not call its submission tool")
+
+            log(verbose, f"{agent_name}.submitted", submission_store["value"])
+            return submission_store["value"]
+        except Exception as exc:
+            last_error = exc
+            log(
+                verbose,
+                f"{agent_name}.attempt_error",
+                {
+                    "attempt": attempt,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
+            if attempt >= DEFAULT_AGENT_MAX_ATTEMPTS or not should_retry_agent_error(exc):
+                break
+            backoff_seconds = float(2 ** attempt)
+            log(
+                verbose,
+                f"{agent_name}.retry_backoff",
+                {"attempt": attempt, "sleep_seconds": backoff_seconds},
+            )
+            await asyncio.sleep(backoff_seconds)
+
+    if last_error is None:
+        raise ValueError(f"{agent_name} agent failed without an explicit exception")
+    raise last_error
+
+
+async def collect_final_text(client: ClaudeSDKClient, *, agent_name: str, verbose: bool) -> str:
+    last_text = ""
+    async for message in client.receive_response():
+        log(verbose, f"{agent_name}.message_type", type(message).__name__)
+        if isinstance(message, AssistantMessage):
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    text = block.text.strip()
+                    if text:
+                        log(verbose, f"{agent_name}.assistant_message", text)
+                        last_text = text
+                elif isinstance(block, ToolUseBlock):
+                    log(
+                        verbose,
+                        f"{agent_name}.tool_use",
+                        {
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        },
+                    )
+                elif isinstance(block, ToolResultBlock):
+                    log(
+                        verbose,
+                        f"{agent_name}.tool_result",
+                        {
+                            "tool_use_id": block.tool_use_id,
+                            "is_error": bool(block.is_error),
+                            "content": block.content,
+                        },
+                    )
+        elif isinstance(message, UserMessage):
+            log(
+                verbose,
+                f"{agent_name}.user_message",
+                {
+                    "parent_tool_use_id": message.parent_tool_use_id,
+                    "tool_use_result": message.tool_use_result,
+                    "content": message.content,
+                },
+            )
+        elif isinstance(message, SessionMessage):
+            log(
+                verbose,
+                f"{agent_name}.session_message",
+                {
+                    "type": message.type,
+                    "uuid": message.uuid,
+                    "session_id": message.session_id,
+                    "parent_tool_use_id": message.parent_tool_use_id,
+                    "message": message.message,
+                },
+            )
+        elif isinstance(message, TaskStartedMessage):
+            log(
+                verbose,
+                f"{agent_name}.task_started",
+                {
+                    "task_id": message.task_id,
+                    "description": message.description,
+                    "tool_use_id": message.tool_use_id,
+                    "task_type": message.task_type,
+                },
+            )
+        elif isinstance(message, TaskProgressMessage):
+            log(
+                verbose,
+                f"{agent_name}.task_progress",
+                {
+                    "task_id": message.task_id,
+                    "description": message.description,
+                    "tool_use_id": message.tool_use_id,
+                    "last_tool_name": message.last_tool_name,
+                    "usage": message.usage,
+                },
+            )
+        elif isinstance(message, TaskNotificationMessage):
+            log(
+                verbose,
+                f"{agent_name}.task_notification",
+                {
+                    "task_id": message.task_id,
+                    "status": message.status,
+                    "tool_use_id": message.tool_use_id,
+                    "summary": message.summary,
+                    "output_file": message.output_file,
+                },
+            )
+        elif isinstance(message, SystemMessage):
+            log(
+                verbose,
+                f"{agent_name}.system_message",
+                {
+                    "subtype": message.subtype,
+                    "data": message.data,
+                },
+            )
+        elif isinstance(message, ResultMessage):
+            log(
+                verbose,
+                f"{agent_name}.result",
+                {
+                    "subtype": message.subtype,
+                    "duration_ms": message.duration_ms,
+                    "duration_api_ms": message.duration_api_ms,
+                    "is_error": message.is_error,
+                    "num_turns": message.num_turns,
+                    "stop_reason": message.stop_reason,
+                    "total_cost_usd": message.total_cost_usd,
+                    "result": message.result,
+                },
+            )
+        else:
+            log(verbose, f"{agent_name}.unhandled_message", repr(message))
+    return strip_json_fences(last_text)
+
+
+def build_sdk_server(server_name: str, tool_names: list[str], *, extra_tools: list[Any]) -> dict[str, Any]:
+    selected_tools = [require_tool(name) for name in tool_names] + list(extra_tools)
+    return create_sdk_mcp_server(name=server_name, version="1.0.0", tools=selected_tools)
+
+
+def require_tool(name: str) -> Any:
+    if name not in TOOL_BY_NAME:
+        raise ValueError(f"Unknown tool requested for agent: {name}")
+    return TOOL_BY_NAME[name]
+
+
+def normalize_dispatch_agents(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for value in values:
+        agent_name = str(value).strip().lower()
+        if agent_name not in SOURCE_AGENT_NAMES or agent_name in seen:
+            continue
+        seen.add(agent_name)
+        normalized.append(agent_name)
+    if normalized:
+        return normalized
+    return list(SOURCE_AGENT_NAMES)
+
+
+def parse_json_text(text: str) -> Any:
+    stripped = strip_json_fences(text)
+    return json.loads(stripped)
+
+
+def strip_json_fences(text: str) -> str:
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+    return stripped
+
+
+def build_source_submission_tool(agent_name: str, *, verbose: bool) -> Any:
+    def factory(store: dict[str, Any]) -> Any:
+        source_item_properties: dict[str, Any] = {"feed": {"type": "string"}}
+        source_item_required = ["feed"]
+        if agent_name not in {"youtube", "reddit"}:
+            source_item_properties["type"] = {"type": "string"}
+            source_item_required = ["type", "feed"]
+
+        @tool(
+            "submit_source_candidates",
+            f"Submit the final source candidates chosen by the {agent_name} agent.",
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "sources": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": source_item_properties,
+                            "required": source_item_required,
+                        },
+                        "minItems": 1,
+                    },
+                    "notes": {"type": "string"},
+                },
+                "required": ["sources", "notes"],
+            },
+        )
+        async def submit_source_candidates(args: dict[str, Any]) -> dict[str, Any]:
+            sources = args.get("sources", [])
+            notes = str(args.get("notes", "")).strip()
+            if not isinstance(sources, list) or not all(isinstance(item, dict) for item in sources):
+                return {"content": [{"type": "text", "text": "sources must be a list of objects"}], "is_error": True}
+            try:
+                validated_sources = [
+                    normalize_submitted_source_spec(item, agent_name=agent_name, label=f"{agent_name} source")
+                    for item in sources
+                ]
+                await validate_live_sources(validated_sources, label=f"{agent_name} source", verbose=verbose)
+            except Exception as exc:
+                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+            store["value"] = {"sources": validated_sources, "notes": notes}
+            return {"content": [{"type": "text", "text": "Source candidates accepted"}]}
+
+        return submit_source_candidates
+
+    return factory
+
+
+def build_pipeline_submission_tool() -> Any:
+    def factory(store: dict[str, Any]) -> Any:
+        @tool(
+            "submit_pipeline",
+            "Submit the final pipeline JSON once you are satisfied with it.",
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "blocks_json": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    }
+                },
+                "required": ["blocks_json"],
+            },
+        )
+        async def submit_pipeline(args: dict[str, Any]) -> dict[str, Any]:
+            blocks_json = args.get("blocks_json", [])
+            if not isinstance(blocks_json, list) or not all(isinstance(item, dict) for item in blocks_json):
+                return {"content": [{"type": "text", "text": "blocks_json must be a list of block objects"}], "is_error": True}
+            try:
+                deserialize_pipeline(blocks_json)
+            except Exception as exc:
+                return {"content": [{"type": "text", "text": f"Invalid pipeline: {exc}"}], "is_error": True}
+            store["value"] = {"blocks_json": blocks_json}
+            return {"content": [{"type": "text", "text": "Pipeline accepted"}]}
+
+        return submit_pipeline
+
+    return factory

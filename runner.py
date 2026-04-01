@@ -95,7 +95,7 @@ Behavior:
   those subreddit feeds.
 - `youtube_search` returns top YouTube video search results directly in
   YouTube API relevance order as normalized articles.
-- `youtube_search` fills `full_text` with transcript text on a best-effort basis.
+- `youtube_search` fills `full_text` from the video description.
 - `youtube_channel` resolves a channel id, channel URL, or channel-like name
   into a verified YouTube channel feed and fetches its articles.
 - `youtube_channel_url` resolves a YouTube channel URL into a verified feed.
@@ -120,13 +120,10 @@ from rss import FeedBatchError, fetch_rss_articles
 from stream_history import _write_articles_sync
 from youtube_scraper import (
     get_channel_feed,
-    get_video_transcript,
     search_channels_by_topic,
     search_videos_by_topic,
     search_videos_direct_by_topic,
 )
-
-YOUTUBE_CONTENT_FROM_TRANSCRIPT_MAX_CHARS = 500
 
 
 class SourceSpec(TypedDict):
@@ -349,75 +346,13 @@ def _relabel_source_type(articles: list[dict[str, Any]], *, source_type: str) ->
 
 
 async def _enrich_articles_with_youtube_transcripts(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    video_ids = [_extract_youtube_video_id(str(article.get("url", "")).strip()) for article in articles]
-    transcripts = await asyncio.gather(
-        *[get_video_transcript(video_id) if video_id else _return_none() for video_id in video_ids],
-        return_exceptions=True,
-    )
-
     enriched_articles: list[dict[str, Any]] = []
-    for article, transcript in zip(articles, transcripts, strict=False):
+    for article in articles:
         enriched_article = dict(article)
         content_text = str(enriched_article.get("content", "")).strip()
-        if isinstance(transcript, dict):
-            transcript_text = str(transcript.get("text", "")).strip()
-            if transcript_text:
-                enriched_article["full_text"] = transcript_text
-                if _should_fill_youtube_content_from_transcript(enriched_article):
-                    enriched_article["content"] = _truncate_text(
-                        transcript_text,
-                        max_chars=YOUTUBE_CONTENT_FROM_TRANSCRIPT_MAX_CHARS,
-                    )
-            raw_value = enriched_article.get("raw")
-            if isinstance(raw_value, dict):
-                raw_copy = dict(raw_value)
-                raw_copy["transcript"] = dict(transcript)
-                enriched_article["raw"] = raw_copy
-        if not str(enriched_article.get("full_text", "")).strip():
-            enriched_article["full_text"] = content_text
+        enriched_article["full_text"] = content_text
         enriched_articles.append(enriched_article)
     return enriched_articles
-
-
-async def _return_none() -> None:
-    return None
-
-
-def _extract_youtube_video_id(url: str) -> str:
-    if not url:
-        return ""
-
-    parsed = urlparse(url)
-    hostname = parsed.netloc.lower()
-    if hostname in {"youtube.com", "www.youtube.com", "m.youtube.com"}:
-        if parsed.path == "/watch":
-            return ((parse_qs(parsed.query).get("v") or [""])[0]).strip()
-        path_parts = [part for part in parsed.path.split("/") if part]
-        if len(path_parts) >= 2 and path_parts[0] == "shorts":
-            return path_parts[1].strip()
-
-    if hostname == "youtu.be":
-        return parsed.path.lstrip("/").strip()
-
-    return ""
-
-
-def _should_fill_youtube_content_from_transcript(article: dict[str, Any]) -> bool:
-    if str(article.get("source_type", "")).strip().lower() != "youtube":
-        return False
-
-    content = str(article.get("content", "")).strip()
-    title = str(article.get("title", "")).strip()
-    if not content:
-        return True
-    return bool(title) and content == title
-
-
-def _truncate_text(text: str, *, max_chars: int) -> str:
-    normalized = text.strip()
-    if len(normalized) <= max_chars:
-        return normalized
-    return normalized[: max_chars - 3].rstrip() + "..."
 
 
 def _youtube_video_to_article(
