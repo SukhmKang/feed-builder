@@ -1,11 +1,26 @@
 import uuid
+import os
 from datetime import datetime
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
-DATABASE_URL = "sqlite:///./feed_builder_app.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DEFAULT_DATABASE_URL = "sqlite:///./feed_builder_app.db"
+
+
+def _get_database_url() -> str:
+    database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL).strip()
+    if database_url.startswith("postgres://"):
+        return "postgresql://" + database_url[len("postgres://") :]
+    return database_url
+
+
+DATABASE_URL = _get_database_url()
+ENGINE_KWARGS = {"pool_pre_ping": True}
+if DATABASE_URL.startswith("sqlite"):
+    ENGINE_KWARGS["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, **ENGINE_KWARGS)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
