@@ -13,6 +13,9 @@ interface Props {
 export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Props) {
   const [togglingNotifs, setTogglingNotifs] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState(feed.name);
+  const [savingName, setSavingName] = useState(false);
 
   async function toggleNotifications() {
     if (togglingNotifs) return;
@@ -45,6 +48,33 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
     }
   }
 
+  async function handleSaveName() {
+    const normalized = draftName.trim();
+    if (!normalized || normalized === feed.name || savingName) {
+      if (normalized === feed.name) {
+        setEditingName(false);
+      }
+      return;
+    }
+
+    setSavingName(true);
+    try {
+      const updated = await api.feeds.update(feed.id, { name: normalized });
+      onUpdated(updated);
+      setDraftName(updated.name);
+      setEditingName(false);
+    } catch (err) {
+      alert(`Rename failed: ${err instanceof Error ? err.message : err}`);
+    } finally {
+      setSavingName(false);
+    }
+  }
+
+  function handleCancelName() {
+    setDraftName(feed.name);
+    setEditingName(false);
+  }
+
   const statusColor =
     feed.status === "ready" ? "#34c759" : feed.status === "error" ? "#ff3b30" : "#ff9500";
   const statusLabel =
@@ -59,7 +89,49 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
     >
       <div style={styles.header} onClick={onSelect}>
         <div>
-          <div style={styles.name}>{feed.name}</div>
+          {editingName ? (
+            <div style={styles.nameEditor} onClick={(event) => event.stopPropagation()}>
+              <input
+                value={draftName}
+                onChange={(event) => setDraftName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void handleSaveName();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    handleCancelName();
+                  }
+                }}
+                autoFocus
+                style={styles.nameInput}
+                maxLength={120}
+              />
+              <div style={styles.nameEditorActions}>
+                <button onClick={() => void handleSaveName()} disabled={savingName} style={styles.inlineSaveBtn}>
+                  {savingName ? "…" : "Save"}
+                </button>
+                <button onClick={handleCancelName} disabled={savingName} style={styles.inlineCancelBtn}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={styles.nameRow}>
+              <div style={styles.name}>{feed.name}</div>
+              <button
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setDraftName(feed.name);
+                  setEditingName(true);
+                }}
+                style={styles.editBtn}
+              >
+                Edit
+              </button>
+            </div>
+          )}
           <div style={styles.topic}>{feed.topic}</div>
         </div>
         <span style={{ ...styles.badge, background: statusColor }}>{statusLabel}</span>
@@ -150,8 +222,29 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     marginBottom: 8,
   },
+  nameRow: { display: "flex", alignItems: "center", gap: 8, marginBottom: 2 },
   name: { fontWeight: 600, fontSize: 15, marginBottom: 2 },
-  topic: { fontSize: 12, color: "#6e6e73", lineHeight: 1.4 },
+  nameEditor: { display: "flex", flexDirection: "column", gap: 8, marginBottom: 4 },
+  nameInput: { fontSize: 14, fontWeight: 600, padding: "8px 10px" },
+  nameEditorActions: { display: "flex", gap: 8 },
+  inlineSaveBtn: { fontSize: 12, padding: "5px 10px", background: "#007aff", color: "#fff" },
+  inlineCancelBtn: { fontSize: 12, padding: "5px 10px", background: "transparent", color: "#6e6e73" },
+  editBtn: {
+    fontSize: 11,
+    padding: "2px 8px",
+    background: "#eef4ff",
+    color: "#007aff",
+    borderRadius: 999,
+  },
+  topic: {
+    fontSize: 12,
+    color: "#6e6e73",
+    lineHeight: 1.4,
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    maxWidth: 200,
+  },
   badge: {
     padding: "2px 8px",
     borderRadius: 20,

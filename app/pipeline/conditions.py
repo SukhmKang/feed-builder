@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from app.llm import generate_text
+from app.ai.llm import generate_text
 from app.pipeline.core import (
     DEFAULT_KEYWORD_FIELDS,
     Condition,

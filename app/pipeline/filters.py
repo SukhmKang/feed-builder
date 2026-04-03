@@ -1,10 +1,11 @@
 import asyncio
 import importlib
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.llm import generate_text
+from app.ai.llm import generate_text
 from app.pipeline.core import (
     Block,
     BlockResult,
@@ -30,6 +31,8 @@ Every block implements:
 
 LLM_FILTER_MAX_TOKENS = 800
 LLM_FILTER_MAX_ATTEMPTS = 2
+LLM_FILTER_BATCH_MAX_TOKENS = 4000
+LLM_FILTER_BATCH_MAX_CONCURRENCY = 3
 LLM_FILTER_SCHEMA_EXAMPLE = {
     "pass": True,
     "criteria_met": ["example criterion"],
@@ -37,8 +40,21 @@ LLM_FILTER_SCHEMA_EXAMPLE = {
     "tags": ["example-tag"],
     "reasoning": "One line explanation.",
 }
+LLM_FILTER_BATCH_SCHEMA_EXAMPLE = {
+    "results": [
+        {
+            "article_id": "abc123",
+            "pass": True,
+            "criteria_met": ["example criterion"],
+            "criteria_failed": [],
+            "tags": ["example-tag"],
+            "reasoning": "One line explanation.",
+        }
+    ]
+}
 
 PROMPT_PLACEHOLDERS = ("title", "content", "source_name", "tags")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -141,15 +157,22 @@ class LLMFilter:
 
     prompt: str
     tier: LLMTier = "mini"
+    batch_prompt: str | None = None
+    batch_size: int = 10
 
     def __post_init__(self) -> None:
         if self.tier not in VALID_LLM_TIERS:
             raise ValueError(f"Unsupported LLMFilter tier: {self.tier}")
+        if int(self.batch_size) < 1:
+            raise ValueError("LLMFilter.batch_size must be at least 1")
+        self.batch_size = int(self.batch_size)
 
     async def run(self, article: dict[str, Any]) -> BlockResult:
         """Run the prompt-driven JSON classifier and validate its output."""
 
         working_article = copy_article(article)
+        article_id = str(working_article.get("id", "")).strip()
+        article_title = str(working_article.get("title", "")).strip()
         rendered_prompt = _render_prompt_template(
             self.prompt,
             {
@@ -168,6 +191,17 @@ class LLMFilter:
             system_prompt = _build_llm_filter_system_prompt()
             prompt = _build_llm_filter_task_prompt(rendered_prompt, validation_error, raw_response)
             provider, model = resolve_tier_model(self.tier)
+            logger.info(
+                "LLMFilter request article_id=%s tier=%s provider=%s model=%s title=%r",
+                article_id,
+                self.tier,
+                provider,
+                model,
+                article_title[:120],
+            )
+            logger.info("LLMFilter system prompt article_id=%s:\n%s", article_id, system_prompt)
+            logger.info("LLMFilter rendered prompt article_id=%s:\n%s", article_id, rendered_prompt)
+            logger.info("LLMFilter final task prompt article_id=%s:\n%s", article_id, prompt)
             raw_response = await generate_text(
                 prompt,
                 provider=provider,
@@ -176,11 +210,17 @@ class LLMFilter:
                 system=system_prompt,
                 json_output=True,
             )
+            logger.info("LLMFilter raw response article_id=%s:\n%s", article_id, raw_response)
             try:
                 parsed = _validate_llm_filter_response(raw_response)
                 break
             except ValueError as exc:
                 validation_error = str(exc)
+                logger.warning(
+                    "LLMFilter response validation failed article_id=%s error=%s",
+                    article_id,
+                    validation_error,
+                )
 
         if parsed is None:
             raise ValueError(f"LLMFilter returned malformed JSON after retry: {validation_error}")
@@ -192,6 +232,94 @@ class LLMFilter:
             "article": working_article,
             "reason": reason,
         }
+
+    async def run_batch(self, articles: list[dict[str, Any]]) -> list[BlockResult]:
+        """Run the filter against a batch of articles when a batch prompt is available."""
+
+        if not articles:
+            return []
+
+        if not self.batch_prompt or self.batch_size <= 1 or len(articles) == 1:
+            return await asyncio.gather(*[self.run(article) for article in articles])
+
+        chunks = [articles[start : start + self.batch_size] for start in range(0, len(articles), self.batch_size)]
+        semaphore = asyncio.Semaphore(LLM_FILTER_BATCH_MAX_CONCURRENCY)
+
+        async def _run_chunk(chunk_articles: list[dict[str, Any]]) -> list[BlockResult]:
+            async with semaphore:
+                return await self._run_batch_chunk(chunk_articles)
+
+        chunk_results = await asyncio.gather(*[_run_chunk(chunk) for chunk in chunks])
+        flattened: list[BlockResult] = []
+        for results in chunk_results:
+            flattened.extend(results)
+        return flattened
+
+    async def _run_batch_chunk(self, articles: list[dict[str, Any]]) -> list[BlockResult]:
+        working_articles = [copy_article(article) for article in articles]
+        payload_articles = [_build_batch_article_payload(article, index) for index, article in enumerate(working_articles)]
+        expected_ids = [item["article_id"] for item in payload_articles]
+
+        validation_error = ""
+        raw_response = ""
+        parsed: dict[str, Any] | None = None
+
+        for _ in range(LLM_FILTER_MAX_ATTEMPTS):
+            system_prompt = _build_llm_filter_batch_system_prompt()
+            prompt = _build_llm_filter_batch_task_prompt(
+                batch_prompt=self.batch_prompt or "",
+                articles_payload=payload_articles,
+                validation_error=validation_error,
+                raw_response=raw_response,
+            )
+            provider, model = resolve_tier_model(self.tier)
+            logger.info(
+                "LLMFilter batch request tier=%s provider=%s model=%s article_count=%s article_ids=%s",
+                self.tier,
+                provider,
+                model,
+                len(payload_articles),
+                expected_ids,
+            )
+            logger.info("LLMFilter batch system prompt:\n%s", system_prompt)
+            logger.info("LLMFilter batch prompt:\n%s", self.batch_prompt or "")
+            logger.info("LLMFilter batch task prompt:\n%s", prompt)
+            raw_response = await generate_text(
+                prompt,
+                provider=provider,
+                model=model,
+                max_tokens=LLM_FILTER_BATCH_MAX_TOKENS,
+                system=system_prompt,
+                json_output=True,
+            )
+            logger.info("LLMFilter batch raw response:\n%s", raw_response)
+            try:
+                parsed = _validate_llm_filter_batch_response(raw_response, expected_ids=expected_ids)
+                break
+            except ValueError as exc:
+                validation_error = str(exc)
+                logger.warning("LLMFilter batch response validation failed error=%s", validation_error)
+
+        if parsed is None:
+            logger.warning(
+                "LLMFilter batch failed after retries; falling back to per-article execution for %s articles",
+                len(articles),
+            )
+            return await asyncio.gather(*[self.run(article) for article in articles])
+
+        results_by_id = {item["article_id"]: item for item in parsed["results"]}
+        block_results: list[BlockResult] = []
+        for article, payload in zip(working_articles, payload_articles, strict=False):
+            item = results_by_id[payload["article_id"]]
+            merge_tags(article, item["tags"])
+            block_results.append(
+                {
+                    "passed": bool(item["pass"]),
+                    "article": article,
+                    "reason": str(item["reasoning"]).strip(),
+                }
+            )
+        return block_results
 
 
 @dataclass(slots=True)
@@ -358,10 +486,60 @@ def _build_llm_filter_system_prompt() -> str:
     )
 
 
+def _build_llm_filter_batch_system_prompt() -> str:
+    return "\n\n".join(
+        [
+            "You are a strict JSON batch classifier.",
+            "Return JSON only.",
+            "You will classify a list of articles in one response.",
+            "Your response must be a single JSON object that exactly matches this schema:",
+            json.dumps(LLM_FILTER_BATCH_SCHEMA_EXAMPLE, indent=2),
+            "Validation rules:",
+            "- 'results' must be a list of objects.",
+            "- Each result object must include: article_id, pass, criteria_met, criteria_failed, tags, reasoning.",
+            "- 'article_id' must exactly match one of the provided article ids.",
+            "- 'pass' must be a boolean.",
+            "- 'criteria_met', 'criteria_failed', and 'tags' must each be lists of strings.",
+            "- 'reasoning' must be a non-empty string.",
+            "- If 'pass' is true, 'criteria_met' must be non-empty.",
+            "- If 'pass' is false, 'criteria_failed' must be non-empty.",
+            "- Return exactly one result per provided article id.",
+            "Do not include markdown fences, prose, or any text outside the JSON object.",
+        ]
+    )
+
+
 def _build_llm_filter_task_prompt(rendered_prompt: str, validation_error: str, raw_response: str) -> str:
     prompt_parts = [
         "Use the following task instructions and article data to produce the JSON result.",
         rendered_prompt.strip(),
+    ]
+
+    if validation_error:
+        prompt_parts.extend(
+            [
+                "Your previous response could not be parsed or did not conform to the required format.",
+                f"Validation error: {validation_error}",
+                "Rewrite the answer so it strictly matches the required JSON schema.",
+                f"Previous response: {raw_response}",
+            ]
+        )
+
+    return "\n\n".join(prompt_parts)
+
+
+def _build_llm_filter_batch_task_prompt(
+    *,
+    batch_prompt: str,
+    articles_payload: list[dict[str, Any]],
+    validation_error: str,
+    raw_response: str,
+) -> str:
+    prompt_parts = [
+        "Use the following task instructions to classify the provided article list.",
+        batch_prompt.strip(),
+        "Articles JSON:",
+        json.dumps(articles_payload, indent=2, ensure_ascii=True),
     ]
 
     if validation_error:
@@ -410,11 +588,76 @@ def _validate_llm_filter_response(raw_response: str) -> dict[str, Any]:
     return parsed
 
 
+def _validate_llm_filter_batch_response(raw_response: str, *, expected_ids: list[str]) -> dict[str, Any]:
+    try:
+        parsed = json.loads(raw_response)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Response was not valid JSON: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError("Response must be a JSON object")
+
+    results = parsed.get("results")
+    if not isinstance(results, list):
+        raise ValueError("'results' must be a list")
+
+    seen_ids: set[str] = set()
+    expected_id_set = set(expected_ids)
+    for index, item in enumerate(results):
+        if not isinstance(item, dict):
+            raise ValueError(f"results[{index}] must be an object")
+
+        required_keys = {"article_id", "pass", "criteria_met", "criteria_failed", "tags", "reasoning"}
+        missing_keys = required_keys.difference(item.keys())
+        if missing_keys:
+            raise ValueError(f"results[{index}] is missing keys: {', '.join(sorted(missing_keys))}")
+
+        article_id = item["article_id"]
+        if not isinstance(article_id, str) or not article_id.strip():
+            raise ValueError(f"results[{index}].article_id must be a non-empty string")
+        if article_id not in expected_id_set:
+            raise ValueError(f"results[{index}].article_id was not in the requested batch: {article_id}")
+        if article_id in seen_ids:
+            raise ValueError(f"Duplicate article_id in batch response: {article_id}")
+        seen_ids.add(article_id)
+
+        if not isinstance(item["pass"], bool):
+            raise ValueError(f"results[{index}].pass must be a boolean")
+        if not is_string_list(item["criteria_met"]):
+            raise ValueError(f"results[{index}].criteria_met must be a list of strings")
+        if not is_string_list(item["criteria_failed"]):
+            raise ValueError(f"results[{index}].criteria_failed must be a list of strings")
+        if not is_string_list(item["tags"]):
+            raise ValueError(f"results[{index}].tags must be a list of strings")
+        if not isinstance(item["reasoning"], str) or not item["reasoning"].strip():
+            raise ValueError(f"results[{index}].reasoning must be a non-empty string")
+        if item["pass"] and not item["criteria_met"]:
+            raise ValueError(f"results[{index}].criteria_met must be non-empty when pass is true")
+        if not item["pass"] and not item["criteria_failed"]:
+            raise ValueError(f"results[{index}].criteria_failed must be non-empty when pass is false")
+
+    missing_ids = expected_id_set.difference(seen_ids)
+    if missing_ids:
+        raise ValueError(f"Batch response is missing article ids: {', '.join(sorted(missing_ids))}")
+
+    return parsed
+
+
 def _render_prompt_template(template: str, values: dict[str, str]) -> str:
     rendered = str(template)
     for placeholder in PROMPT_PLACEHOLDERS:
         rendered = rendered.replace("{" + placeholder + "}", values.get(placeholder, ""))
     return rendered
+
+
+def _build_batch_article_payload(article: dict[str, Any], position: int) -> dict[str, Any]:
+    article_id = str(article.get("id", "")).strip() or f"batch-article-{position + 1}"
+    return {
+        "article_id": article_id,
+        "title": str(article.get("title", "")),
+        "content": str(article.get("content", "")),
+        "source_name": str(article.get("source_name", "")),
+    }
 
 
 __all__ = [

@@ -1,15 +1,19 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "./api/client";
+import { api, getFeedRssUrl } from "./api/client";
 import { ArticleList } from "./components/ArticleList";
 import { CreateFeedModal } from "./components/CreateFeedModal";
 import { FeedCard } from "./components/FeedCard";
-import type { Feed } from "./types";
+import { PipelineEditor } from "./components/PipelineEditor";
+import { StoriesList } from "./components/StoriesList";
+import type { Feed, PipelineBlock, SourceSpec } from "./types";
 
 export default function App() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline">("articles");
   const [showCreate, setShowCreate] = useState(false);
   const [loadingFeeds, setLoadingFeeds] = useState(true);
+  const [copyingRss, setCopyingRss] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -48,6 +52,7 @@ export default function App() {
   function handleFeedCreated(feed: Feed) {
     setFeeds((prev) => [feed, ...prev.filter((f) => f.id !== feed.id)]);
     setSelectedId(feed.id);
+    setActiveTab("articles");
     setShowCreate(false);
   }
 
@@ -58,6 +63,16 @@ export default function App() {
   function handleFeedDeleted(id: string) {
     setFeeds((prev) => prev.filter((f) => f.id !== id));
     if (selectedId === id) setSelectedId(null);
+  }
+
+  async function handleCopyRss(feedId: string) {
+    try {
+      await navigator.clipboard.writeText(getFeedRssUrl(feedId));
+      setCopyingRss(true);
+      window.setTimeout(() => setCopyingRss(false), 1200);
+    } catch (err) {
+      alert(`Copy RSS failed: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   const selectedFeed = feeds.find((f) => f.id === selectedId) ?? null;
@@ -104,10 +119,52 @@ export default function App() {
               </div>
             </div>
             {selectedFeed.status === "ready" ? (
-              <ArticleList
-                feed={selectedFeed}
-                onPollTriggered={loadFeeds}
-              />
+              <>
+                <div style={styles.tabs}>
+                  <button
+                    style={{ ...styles.tab, ...(activeTab === "articles" ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab("articles")}
+                  >
+                    Articles
+                  </button>
+                  <button
+                    style={{ ...styles.tab, ...(activeTab === "stories" ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab("stories")}
+                  >
+                    Stories
+                  </button>
+                  <button
+                    style={{ ...styles.tab, ...(activeTab === "pipeline" ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab("pipeline")}
+                  >
+                    Edit Pipeline
+                  </button>
+                  <button
+                    style={styles.toolbarBtn}
+                    onClick={() => void handleCopyRss(selectedFeed.id)}
+                  >
+                    {copyingRss ? "Copied RSS" : "Copy RSS"}
+                  </button>
+                </div>
+                {activeTab === "articles" ? (
+                  <ArticleList feed={selectedFeed} onPollTriggered={loadFeeds} />
+                ) : activeTab === "stories" ? (
+                  <StoriesList feed={selectedFeed} />
+                ) : (
+                  <PipelineEditor
+                    key={selectedFeed.id}
+                    sources={(selectedFeed.config?.sources ?? []) as SourceSpec[]}
+                    pipeline={(selectedFeed.config?.blocks ?? []) as PipelineBlock[]}
+                    onSave={async ({ sources, pipeline }) => {
+                      const updated = await api.feeds.update(selectedFeed.id, {
+                        blocks: pipeline,
+                        sources,
+                      });
+                      handleFeedUpdated(updated);
+                    }}
+                  />
+                )}
+              </>
             ) : selectedFeed.status === "building" ? (
               <div style={styles.centerMsg}>
                 <div style={styles.spinner} />
@@ -173,6 +230,38 @@ const styles: Record<string, React.CSSProperties> = {
   },
   feedTitle: { fontSize: 18, fontWeight: 600, marginBottom: 2 },
   feedTopic: { fontSize: 13, color: "#6e6e73" },
+  tabs: {
+    display: "flex",
+    alignItems: "center",
+    gap: 4,
+    borderBottom: "1px solid #e5e5ea",
+    padding: "0 24px",
+    flexShrink: 0,
+  },
+  tab: {
+    padding: "10px 16px",
+    fontSize: 13,
+    fontWeight: 500,
+    border: "none",
+    borderBottom: "2px solid transparent",
+    background: "transparent",
+    color: "#6e6e73",
+    cursor: "pointer",
+    marginBottom: -1,
+    fontFamily: "inherit",
+  },
+  tabActive: {
+    color: "#007aff",
+    borderBottomColor: "#007aff",
+  },
+  toolbarBtn: {
+    marginLeft: "auto",
+    fontSize: 12,
+    padding: "6px 12px",
+    background: "#eef4ff",
+    color: "#007aff",
+    borderRadius: 999,
+  },
   centerMsg: {
     flex: 1,
     display: "flex",

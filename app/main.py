@@ -1,12 +1,13 @@
 """FastAPI application entry point."""
 
+import logging
 import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
-from app.routers import articles, feeds, subscriptions
+from app.routers import articles, feeds, stories, subscriptions
 from app.scheduler import start_scheduler, stop_scheduler
 from app.services.push import get_public_key
 
@@ -15,6 +16,11 @@ from app.services.push import get_public_key
 _dev_origins = ["http://localhost:5173", "http://localhost:3000"]
 _prod_origin = os.environ.get("FRONTEND_URL", "").strip()
 _allowed_origins = _dev_origins + ([_prod_origin] if _prod_origin else [])
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 
 @asynccontextmanager
@@ -38,6 +44,7 @@ app.add_middleware(
 
 app.include_router(feeds.router)
 app.include_router(articles.router)
+app.include_router(stories.router)
 app.include_router(subscriptions.router)
 
 

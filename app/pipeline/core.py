@@ -2,6 +2,7 @@ import asyncio
 import copy
 import fnmatch
 import json
+import logging
 import math
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -29,6 +30,7 @@ Pipeline behavior:
 """
 
 DEFAULT_KEYWORD_FIELDS = ["title", "content"]
+logger = logging.getLogger(__name__)
 
 
 class BlockResult(TypedDict):
@@ -86,12 +88,35 @@ async def run_pipeline(article: dict[str, Any], blocks: list[Block]) -> Pipeline
 
     working_article = copy_article(article)
     block_results: list[BlockResult] = []
+    article_id = str(working_article.get("id", "")).strip()
+    article_title = str(working_article.get("title", "")).strip()
 
-    for block in blocks:
+    for index, block in enumerate(blocks, start=1):
+        logger.info(
+            "Pipeline block start article_id=%s block_index=%s block_type=%s title=%r",
+            article_id,
+            index,
+            block.__class__.__name__,
+            article_title[:120],
+        )
         result = await block.run(working_article)
         working_article = result["article"]
         block_results.append(result)
+        logger.info(
+            "Pipeline block result article_id=%s block_index=%s block_type=%s passed=%s reason=%r",
+            article_id,
+            index,
+            block.__class__.__name__,
+            result["passed"],
+            str(result.get("reason", ""))[:300],
+        )
         if not result["passed"]:
+            logger.info(
+                "Pipeline article dropped article_id=%s dropped_at=%s executed_blocks=%s",
+                article_id,
+                block.__class__.__name__,
+                len(block_results),
+            )
             return {
                 "passed": False,
                 "article": working_article,
@@ -99,6 +124,11 @@ async def run_pipeline(article: dict[str, Any], blocks: list[Block]) -> Pipeline
                 "dropped_at": block.__class__.__name__,
             }
 
+    logger.info(
+        "Pipeline article passed article_id=%s executed_blocks=%s",
+        article_id,
+        len(block_results),
+    )
     return {
         "passed": True,
         "article": working_article,

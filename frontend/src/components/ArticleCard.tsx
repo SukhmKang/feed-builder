@@ -72,9 +72,19 @@ function TweetCard({ article }: { article: Article }) {
 function MediaGrid({ media }: { media: NitterMedia[] }) {
   const items = media.slice(0, 4);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(items.length, 2)}, 1fr)`, gap: 4, marginTop: 10, borderRadius: 10, overflow: "hidden" }}>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: `repeat(${Math.min(items.length, 2)}, minmax(0, 1fr))`,
+        gap: 4,
+        marginTop: 10,
+        borderRadius: 10,
+        overflow: "hidden",
+        maxWidth: 360,
+      }}
+    >
       {items.map((m, i) => (
-        <div key={i} style={{ position: "relative", background: "#000", aspectRatio: "16/9" }}>
+        <div key={i} style={{ position: "relative", background: "#000", aspectRatio: "4/3", maxHeight: 140 }}>
           {m.thumbnail_url && (
             <img
               src={m.thumbnail_url}

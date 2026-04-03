@@ -57,6 +57,36 @@ class Article(Base):
     notified = Column(Boolean, default=False)
 
 
+class Story(Base):
+    __tablename__ = "stories"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    feed_id = Column(String, nullable=False)
+    title = Column(String, nullable=False, default="Untitled story")
+    summary = Column(Text, nullable=False, default="")
+    status = Column(String, nullable=False, default="active")  # active|merged
+    canonical_article_id = Column(String, nullable=True)
+    story_embedding_json = Column(Text, nullable=True)
+    article_count = Column(Integer, nullable=False, default=0)
+    first_published_at = Column(DateTime, nullable=True)
+    last_published_at = Column(DateTime, nullable=True)
+    provenance_json = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class StoryArticle(Base):
+    __tablename__ = "story_articles"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    story_id = Column(String, nullable=False)
+    article_id = Column(String, nullable=False)
+    is_representative = Column(Boolean, default=False)
+    position = Column(Integer, default=0)
+    decision_json = Column(Text, nullable=True)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
 

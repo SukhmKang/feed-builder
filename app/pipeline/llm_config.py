@@ -20,7 +20,7 @@ TIER_MAP: dict[LLMFamily, dict[LLMTier, str]] = {
 
 
 def get_pipeline_llm_family() -> LLMFamily:
-    family = str(os.getenv("PIPELINE_LLM_FAMILY", "anthropic")).strip().lower()
+    family = str(os.getenv("PIPELINE_LLM_FAMILY", "openai")).strip().lower()
     if family not in TIER_MAP:
         raise ValueError(f"Unsupported PIPELINE_LLM_FAMILY: {family}")
     return family  # type: ignore[return-value]

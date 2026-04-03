@@ -1,6 +1,7 @@
 """Article query endpoints."""
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -22,6 +23,28 @@ def _article_to_dict(article: Article) -> dict[str, Any]:
     }
 
 
+def _parse_sort_datetime(value: Any) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.min.replace(tzinfo=timezone.utc)
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _article_sort_key(payload: dict[str, Any]) -> tuple[datetime, datetime]:
+    article = payload.get("article", {})
+    published_at = _parse_sort_datetime(article.get("published_at"))
+    fetched_at = _parse_sort_datetime(payload.get("fetched_at"))
+    return (published_at, fetched_at)
+
+
 @router.get("")
 def list_articles(
     feed_id: str,
@@ -37,5 +60,6 @@ def list_articles(
     q = db.query(Article).filter(Article.feed_id == feed_id)
     if passed is not None:
         q = q.filter(Article.passed == passed)
-    q = q.order_by(Article.fetched_at.desc()).offset(offset).limit(limit)
-    return [_article_to_dict(a) for a in q.all()]
+    articles = [_article_to_dict(a) for a in q.all()]
+    articles.sort(key=_article_sort_key, reverse=True)
+    return articles[offset : offset + limit]
