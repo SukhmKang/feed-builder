@@ -3,9 +3,10 @@ import type { Article, NitterMedia, NitterQuoteTweet, NitterRaw, YouTubeRaw } fr
 interface Props {
   article: Article;
   showPipelineResult: boolean;
+  onVerdictChange?: (articleId: string, verdict: "passed" | "filtered" | null) => void;
 }
 
-export function ArticleCard({ article, showPipelineResult }: Props) {
+export function ArticleCard({ article, showPipelineResult, onVerdictChange }: Props) {
   const a = article.article;
   const type = a.source_type;
 
@@ -33,9 +34,79 @@ export function ArticleCard({ article, showPipelineResult }: Props) {
           ))}
         </div>
       )}
+      <ManualVerdictBar
+        articleId={article.id}
+        currentVerdict={article.manual_verdict}
+        onVerdictChange={onVerdictChange}
+      />
     </div>
   );
 }
+
+// ─── Manual verdict bar ───────────────────────────────────────────────────────
+
+interface ManualVerdictBarProps {
+  articleId: string;
+  currentVerdict: "passed" | "filtered" | null;
+  onVerdictChange?: (articleId: string, verdict: "passed" | "filtered" | null) => void;
+}
+
+function ManualVerdictBar({ articleId, currentVerdict, onVerdictChange }: ManualVerdictBarProps) {
+  function handleClick(verdict: "passed" | "filtered") {
+    const next = currentVerdict === verdict ? null : verdict;
+    onVerdictChange?.(articleId, next);
+  }
+
+  return (
+    <div style={verdictStyles.bar}>
+      <span style={verdictStyles.label}>Manual:</span>
+      <button
+        style={{
+          ...verdictStyles.btn,
+          ...(currentVerdict === "passed" ? verdictStyles.passedActive : verdictStyles.passedIdle),
+        }}
+        onClick={() => handleClick("passed")}
+        title={currentVerdict === "passed" ? "Click to clear" : "Mark as passed"}
+      >
+        {currentVerdict === "passed" ? "✓ Passed" : "Pass"}
+      </button>
+      <button
+        style={{
+          ...verdictStyles.btn,
+          ...(currentVerdict === "filtered" ? verdictStyles.filteredActive : verdictStyles.filteredIdle),
+        }}
+        onClick={() => handleClick("filtered")}
+        title={currentVerdict === "filtered" ? "Click to clear" : "Mark as filtered out"}
+      >
+        {currentVerdict === "filtered" ? "✗ Filtered" : "Filter out"}
+      </button>
+    </div>
+  );
+}
+
+const verdictStyles: Record<string, React.CSSProperties> = {
+  bar: {
+    display: "flex",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingTop: 8,
+    borderTop: "1px solid #f2f2f7",
+  },
+  label: { fontSize: 11, color: "#8e8e93", marginRight: 2 },
+  btn: {
+    fontSize: 11,
+    padding: "3px 10px",
+    borderRadius: 12,
+    cursor: "pointer",
+    fontWeight: 500,
+    transition: "background 0.1s, color 0.1s",
+  },
+  passedIdle: { background: "#f2f2f7", color: "#3a3a3c", border: "1px solid #d1d1d6" },
+  passedActive: { background: "#34c759", color: "#fff", border: "1px solid #34c759" },
+  filteredIdle: { background: "#f2f2f7", color: "#3a3a3c", border: "1px solid #d1d1d6" },
+  filteredActive: { background: "#ff3b30", color: "#fff", border: "1px solid #ff3b30" },
+};
 
 // ─── Tweet ────────────────────────────────────────────────────────────────────
 

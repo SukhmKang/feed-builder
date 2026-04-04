@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, getFeedRssUrl } from "./api/client";
 import { ArticleList } from "./components/ArticleList";
+import { AuditTab } from "./components/AuditTab";
 import { CreateFeedModal } from "./components/CreateFeedModal";
 import { FeedCard } from "./components/FeedCard";
 import { PipelineEditor } from "./components/PipelineEditor";
@@ -10,15 +11,20 @@ import type { Feed, PipelineBlock, SourceSpec } from "./types";
 export default function App() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline">("articles");
+  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline" | "audits">("articles");
   const [showCreate, setShowCreate] = useState(false);
   const [loadingFeeds, setLoadingFeeds] = useState(true);
   const [copyingRss, setCopyingRss] = useState(false);
+  const [topicExpanded, setTopicExpanded] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     loadFeeds();
   }, []);
+
+  useEffect(() => {
+    setTopicExpanded(false);
+  }, [selectedId]);
 
   // Poll building feeds every 5s until they resolve
   useEffect(() => {
@@ -115,7 +121,25 @@ export default function App() {
             <div style={styles.mainHeader}>
               <div>
                 <h2 style={styles.feedTitle}>{selectedFeed.name}</h2>
-                <p style={styles.feedTopic}>{selectedFeed.topic}</p>
+                <div style={styles.feedTopicRow}>
+                  <p
+                    style={{
+                      ...styles.feedTopic,
+                      ...(topicExpanded ? styles.feedTopicExpanded : {}),
+                    }}
+                  >
+                    {selectedFeed.topic}
+                  </p>
+                  {selectedFeed.topic.length > 120 ? (
+                    <button
+                      type="button"
+                      style={styles.topicToggle}
+                      onClick={() => setTopicExpanded((value) => !value)}
+                    >
+                      {topicExpanded ? "Show less" : "Show more"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
             </div>
             {selectedFeed.status === "ready" ? (
@@ -140,6 +164,12 @@ export default function App() {
                     Edit Pipeline
                   </button>
                   <button
+                    style={{ ...styles.tab, ...(activeTab === "audits" ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab("audits")}
+                  >
+                    Audits
+                  </button>
+                  <button
                     style={styles.toolbarBtn}
                     onClick={() => void handleCopyRss(selectedFeed.id)}
                   >
@@ -147,21 +177,28 @@ export default function App() {
                   </button>
                 </div>
                 {activeTab === "articles" ? (
-                  <ArticleList feed={selectedFeed} onPollTriggered={loadFeeds} />
+                  <ArticleList feed={selectedFeed} onPollTriggered={loadFeeds} onFeedUpdated={handleFeedUpdated} />
                 ) : activeTab === "stories" ? (
                   <StoriesList feed={selectedFeed} />
+                ) : activeTab === "audits" ? (
+                  <AuditTab feed={selectedFeed} onFeedUpdated={handleFeedUpdated} />
                 ) : (
                   <PipelineEditor
                     key={selectedFeed.id}
                     sources={(selectedFeed.config?.sources ?? []) as SourceSpec[]}
                     pipeline={(selectedFeed.config?.blocks ?? []) as PipelineBlock[]}
-                    onSave={async ({ sources, pipeline }) => {
+                    onSave={async ({ sources, pipeline, versionLabel }) => {
                       const updated = await api.feeds.update(selectedFeed.id, {
                         blocks: pipeline,
                         sources,
+                        version_label: versionLabel,
                       });
                       handleFeedUpdated(updated);
                     }}
+                    onFeedConfigChanged={(config) => {
+                      handleFeedUpdated({ ...selectedFeed, config });
+                    }}
+                    feedId={selectedFeed.id}
                   />
                 )}
               </>
@@ -229,7 +266,35 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#fff",
   },
   feedTitle: { fontSize: 18, fontWeight: 600, marginBottom: 2 },
-  feedTopic: { fontSize: 13, color: "#6e6e73" },
+  feedTopicRow: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+    gap: 4,
+  },
+  feedTopic: {
+    fontSize: 13,
+    color: "#6e6e73",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    maxWidth: "100%",
+    margin: 0,
+  },
+  feedTopicExpanded: {
+    whiteSpace: "normal",
+    overflow: "visible",
+    textOverflow: "clip",
+  },
+  topicToggle: {
+    border: "none",
+    background: "transparent",
+    padding: 0,
+    color: "#007aff",
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: "pointer",
+  },
   tabs: {
     display: "flex",
     alignItems: "center",

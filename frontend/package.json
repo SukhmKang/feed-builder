@@ -11,7 +11,9 @@
     "@hello-pangea/dnd": "^18.0.1",
     "@types/react-mentions": "^4.4.1",
     "react": "^18.3.1",
+    "react-diff-viewer-continued": "^4.2.0",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
     "react-mentions": "^4.4.10"
   },
   "devDependencies": {

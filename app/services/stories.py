@@ -534,6 +534,72 @@ def _validate_story_summary(raw: str) -> dict[str, str]:
     return {"title": title[:160], "summary": summary[:1200]}
 
 
+async def remove_article_from_stories(db: Session, *, article_id: str) -> None:
+    """Remove an article from all its stories and update affected story metadata.
+
+    Does NOT regenerate story summaries or embeddings — those stay as-is.
+    Stories with no remaining articles are deleted outright.
+    """
+    links = db.query(StoryArticle).filter(StoryArticle.article_id == article_id).all()
+    if not links:
+        return
+
+    affected_story_ids = {link.story_id for link in links}
+    db.query(StoryArticle).filter(StoryArticle.article_id == article_id).delete(
+        synchronize_session=False
+    )
+    db.flush()
+
+    for story_id in affected_story_ids:
+        story = db.get(Story, story_id)
+        if not story or story.status == "merged":
+            continue
+
+        remaining_records = _load_story_article_records(db, story_id)
+        if not remaining_records:
+            db.delete(story)
+            continue
+
+        # Lightweight metadata refresh — no LLM or embedding calls
+        story.article_count = len(remaining_records)
+
+        member_payloads = [
+            json.loads(r.article_json)
+            for r in remaining_records
+            if r.article_json
+        ]
+        pub_times = [
+            parse_article_datetime(p.get("published_at"))
+            for p in member_payloads
+        ]
+        valid_times = [t for t in pub_times if t is not None]
+        if valid_times:
+            story.first_published_at = min(valid_times)
+            story.last_published_at = max(valid_times)
+
+        representative = _select_representative_article(remaining_records)
+        story.canonical_article_id = (
+            representative.id if representative is not None else story.canonical_article_id
+        )
+        db.query(StoryArticle).filter(StoryArticle.story_id == story_id).update(
+            {StoryArticle.is_representative: False}
+        )
+        if representative is not None:
+            (
+                db.query(StoryArticle)
+                .filter(
+                    StoryArticle.story_id == story_id,
+                    StoryArticle.article_id == representative.id,
+                )
+                .update({StoryArticle.is_representative: True})
+            )
+
+        story.updated_at = _utcnow()
+        db.flush()
+
+    db.commit()
+
+
 def serialize_story_summary(db: Session, story: Story) -> dict[str, Any]:
     canonical_article = _load_article_payload(db, story.canonical_article_id)
     return {

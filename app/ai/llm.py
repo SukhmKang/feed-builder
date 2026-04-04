@@ -237,6 +237,14 @@ def _normalize_json_text(text: str) -> str:
     if fenced_match:
         return fenced_match.group(1).strip()
 
+    if stripped.startswith("```"):
+        lines = stripped.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        return "\n".join(lines).strip()
+
     return stripped
 
 

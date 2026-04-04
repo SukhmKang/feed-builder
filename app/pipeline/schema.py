@@ -22,7 +22,6 @@ from app.pipeline import (
     PublishedAfterCondition,
     PublishedBeforeCondition,
     SemanticSimilarity,
-    SimilarityScoreCondition,
     SourceDomainCondition,
     SourceNameCondition,
     SourceTypeCondition,
@@ -163,7 +162,6 @@ Leaf conditions:
 {"type": "length", "field": "content", "min": 200, "max": 10000}
 {"type": "published_after", "days_ago": 7}
 {"type": "published_before", "days_ago": 30}
-{"type": "similarity_score", "threshold": 0.8, "operator": "gt"}
 {"type": "llm", "prompt": "Return true only if this article is clearly about handheld PC gaming hardware."}
 {"type": "llm", "prompt": "Return true only if this article is clearly about handheld PC gaming hardware.", "tier": "mini"}
 
@@ -394,15 +392,6 @@ def deserialize_condition(condition_json: dict[str, Any]) -> Condition:
 
     if condition_type == "published_before":
         return PublishedBeforeCondition(days_ago=int(_require_number(condition_json, "days_ago", "published_before")))
-
-    if condition_type == "similarity_score":
-        operator = _require_string(condition_json, "operator", "similarity_score")
-        if operator not in {"gt", "lt"}:
-            raise ValueError("similarity_score.operator must be 'gt' or 'lt'")
-        return SimilarityScoreCondition(
-            threshold=float(_require_number(condition_json, "threshold", "similarity_score")),
-            operator=operator,
-        )
 
     if condition_type == "llm":
         prompt = _require_string(condition_json, "prompt", "llm")

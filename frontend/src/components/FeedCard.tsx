@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, urlBase64ToUint8Array } from "../api/client";
+import { api } from "../api/client";
 import type { Feed } from "../types";
 
 interface Props {
@@ -11,30 +11,10 @@ interface Props {
 }
 
 export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Props) {
-  const [togglingNotifs, setTogglingNotifs] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState(feed.name);
   const [savingName, setSavingName] = useState(false);
-
-  async function toggleNotifications() {
-    if (togglingNotifs) return;
-    setTogglingNotifs(true);
-    try {
-      const enabling = !feed.notifications_enabled;
-      if (enabling) {
-        await requestAndSubscribePush(feed.id);
-      } else {
-        await api.push.unsubscribe(feed.id);
-      }
-      const updated = await api.feeds.update(feed.id, { notifications_enabled: enabling });
-      onUpdated(updated);
-    } catch (err) {
-      alert(`Notification error: ${err instanceof Error ? err.message : err}`);
-    } finally {
-      setTogglingNotifs(false);
-    }
-  }
 
   async function handleDelete() {
     if (!confirm(`Delete feed "${feed.name}"?`)) return;
@@ -150,22 +130,6 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
 
       <div style={styles.footer}>
         <button
-          onClick={toggleNotifications}
-          disabled={togglingNotifs || feed.status !== "ready"}
-          style={{
-            ...styles.notifBtn,
-            background: feed.notifications_enabled ? "#007aff" : "#e5e5ea",
-            color: feed.notifications_enabled ? "#fff" : "#1d1d1f",
-          }}
-        >
-          {togglingNotifs
-            ? "…"
-            : feed.notifications_enabled
-              ? "🔔 Notifications on"
-              : "🔕 Notifications off"}
-        </button>
-
-        <button
           onClick={handleDelete}
           disabled={deleting}
           style={styles.deleteBtn}
@@ -175,21 +139,6 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
       </div>
     </div>
   );
-}
-
-async function requestAndSubscribePush(feedId: string) {
-  if (!("Notification" in window)) throw new Error("Notifications not supported");
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") throw new Error("Notification permission denied");
-
-  if (!("serviceWorker" in navigator)) throw new Error("Service workers not supported");
-  const reg = await navigator.serviceWorker.register("/sw.js");
-  const { publicKey } = await api.push.getPublicKey();
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: urlBase64ToUint8Array(publicKey).buffer as ArrayBuffer,
-  });
-  await api.push.subscribe(feedId, sub.toJSON() as PushSubscriptionJSON);
 }
 
 function formatRelative(isoStr: string): string {
@@ -263,10 +212,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 8,
   },
   meta: { fontSize: 12, color: "#8e8e93", marginBottom: 12 },
-  footer: { display: "flex", gap: 8, alignItems: "center" },
-  notifBtn: { fontSize: 12, padding: "6px 12px", borderRadius: 20 },
+  footer: { display: "flex", justifyContent: "flex-end", alignItems: "center" },
   deleteBtn: {
-    marginLeft: "auto",
     fontSize: 12,
     padding: "6px 12px",
     background: "transparent",

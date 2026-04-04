@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   DragDropContext,
   Draggable,
@@ -8,7 +8,7 @@ import {
 } from "@hello-pangea/dnd";
 import { Mention, MentionsInput } from "react-mentions";
 import { api } from "../api/client";
-import type { CustomBlockOption, PipelineBlock, PipelineCondition, PipelineTier, SourceSpec } from "../types";
+import type { CustomBlockOption, PipelineBlock, PipelineCondition, PipelineTier, PipelineVersion, SourceSpec } from "../types";
 
 const BLOCK_TYPES: PipelineBlock["type"][] = [
   "keyword_filter",
@@ -153,7 +153,6 @@ const CONDITION_TYPES: PipelineCondition["type"][] = [
   "length",
   "published_after",
   "published_before",
-  "similarity_score",
   "llm",
 ];
 
@@ -223,12 +222,6 @@ function normalizeCondition(condition: PipelineCondition): PipelineCondition {
     case "published_after":
     case "published_before":
       return { ...condition, days_ago: Number.isFinite(condition.days_ago) ? condition.days_ago : 7 };
-    case "similarity_score":
-      return {
-        ...condition,
-        threshold: Number.isFinite(condition.threshold) ? condition.threshold : 0.7,
-        operator: condition.operator ?? "gt",
-      };
     case "llm":
       return { ...condition, prompt: condition.prompt ?? "", tier: condition.tier ?? "mini" };
     default:
@@ -331,8 +324,6 @@ function defaultCondition(type: PipelineCondition["type"]): PipelineCondition {
       return { type, days_ago: 7 };
     case "published_before":
       return { type, days_ago: 30 };
-    case "similarity_score":
-      return { type, threshold: 0.7, operator: "gt" };
     case "llm":
       return { type, prompt: "", tier: "mini" };
   }
@@ -360,6 +351,31 @@ function reorder<T>(items: T[], startIndex: number, endIndex: number): T[] {
 
 function updateAt<T>(items: T[], index: number, nextItem: T): T[] {
   return items.map((item, itemIndex) => (itemIndex === index ? nextItem : item));
+}
+
+function replaceAt<T>(items: T[], index: number, replacements: T[]): T[] {
+  return [...items.slice(0, index), ...replacements, ...items.slice(index + 1)];
+}
+
+interface BlockEditContext {
+  blockPath: string;
+  parentContext: string;
+  siblingBlocks: PipelineBlock[];
+}
+
+function describeContainerContext(containerPath: string, parentBlock: PipelineBlock | null): string {
+  if (!parentBlock) {
+    return `${containerPath} (top-level pipeline sequence)`;
+  }
+  if (parentBlock.type === "conditional") {
+    if (containerPath.endsWith(".if_true")) return `${containerPath} (conditional true branch)`;
+    if (containerPath.endsWith(".if_false")) return `${containerPath} (conditional false branch)`;
+  }
+  if (parentBlock.type === "switch") {
+    if (containerPath.includes(".branches[")) return `${containerPath} (switch branch block sequence)`;
+    if (containerPath.endsWith(".default")) return `${containerPath} (switch default block sequence)`;
+  }
+  return `${containerPath} (${parentBlock.type} child block sequence)`;
 }
 
 function removeAt<T>(items: T[], index: number): T[] {
@@ -473,9 +489,11 @@ function TierPicker({ value, onChange }: { value: PipelineTier; onChange: (tier:
 function SourceGroupsEditor({
   sources,
   onChange,
+  embedded = false,
 }: {
   sources: SourceSpec[];
   onChange: (sources: SourceSpec[]) => void;
+  embedded?: boolean;
 }) {
   const grouped = useMemo(() => {
     const groups = new Map<string, SourceSpec[]>();
@@ -508,30 +526,52 @@ function SourceGroupsEditor({
   }
 
   return (
-    <section style={sectionShell}>
-      <div style={sectionHeader}>
-        <div>
-          <p style={eyebrow}>Sources</p>
-          <p style={sectionDescription}>Edit the inputs feeding your pipeline. Sources are grouped by their ingestion type so it is easier to reason about coverage.</p>
+    <section style={embedded ? embeddedSectionShell : sectionShell}>
+      {!embedded ? (
+        <div style={sectionHeader}>
+          <div>
+            <p style={eyebrow}>Sources</p>
+            <p style={sectionDescription}>Edit the inputs feeding your pipeline. Sources are grouped by their ingestion type so it is easier to reason about coverage.</p>
+          </div>
+          <select
+            value=""
+            onChange={(event) => {
+              if (event.target.value) {
+                addSource(event.target.value);
+                event.target.value = "";
+              }
+            }}
+            style={addSourceSelect}
+          >
+            <option value="">+ add source</option>
+            {SOURCE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {SOURCE_TYPE_META[type]?.label ?? type}
+              </option>
+            ))}
+          </select>
         </div>
-        <select
-          value=""
-          onChange={(event) => {
-            if (event.target.value) {
-              addSource(event.target.value);
-              event.target.value = "";
-            }
-          }}
-          style={addSourceSelect}
-        >
-          <option value="">+ add source</option>
-          {SOURCE_TYPES.map((type) => (
-            <option key={type} value={type}>
-              {SOURCE_TYPE_META[type]?.label ?? type}
-            </option>
-          ))}
-        </select>
-      </div>
+      ) : (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 14 }}>
+          <select
+            value=""
+            onChange={(event) => {
+              if (event.target.value) {
+                addSource(event.target.value);
+                event.target.value = "";
+              }
+            }}
+            style={addSourceSelect}
+          >
+            <option value="">+ add source</option>
+            {SOURCE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {SOURCE_TYPE_META[type]?.label ?? type}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div style={sourceGroupList}>
         {orderedTypes.map((type) => {
@@ -785,22 +825,6 @@ function ConditionEditor({
             <input type="number" value={condition.days_ago} onChange={(event) => onChange({ type: condition.type, days_ago: Number(event.target.value) } as PipelineCondition)} />
           </label>
         );
-      case "similarity_score":
-        return (
-          <div style={fieldGrid}>
-            <label style={fieldStack}>
-              <span style={fieldLabel}>Threshold</span>
-              <input type="number" step="0.05" min="0" max="1" value={condition.threshold} onChange={(event) => onChange({ type: "similarity_score", threshold: Number(event.target.value), operator: condition.operator })} />
-            </label>
-            <label style={fieldStack}>
-              <span style={fieldLabel}>Operator</span>
-              <select value={condition.operator} onChange={(event) => onChange({ type: "similarity_score", threshold: condition.threshold, operator: event.target.value as "gt" | "lt" })}>
-                <option value="gt">greater than</option>
-                <option value="lt">less than</option>
-              </select>
-            </label>
-          </div>
-        );
       case "llm":
         return (
           <div style={{ display: "grid", gap: 12 }}>
@@ -837,17 +861,26 @@ function BlockEditor({
   index,
   onChange,
   onDelete,
+  onAiEditSelf,
+  onAiEditBlock,
   dragHandleProps,
   customBlockOptions,
+  blockPath,
 }: {
   block: PipelineBlock;
   index: number;
   onChange: (block: PipelineBlock) => void;
   onDelete: () => void;
+  onAiEditSelf: (instruction: string) => Promise<void>;
+  onAiEditBlock: (block: PipelineBlock, instruction: string, context: BlockEditContext) => Promise<PipelineBlock[]>;
   dragHandleProps?: DraggableProvidedDragHandleProps | null;
   customBlockOptions: CustomBlockOption[];
+  blockPath: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [aiWorking, setAiWorking] = useState(false);
   const meta = BLOCK_META[block.type];
 
   function body() {
@@ -905,6 +938,9 @@ function BlockEditor({
                     onChange={(if_true) => onChange({ ...block, if_true })}
                     nested
                     customBlockOptions={customBlockOptions}
+                    onAiEdit={onAiEditBlock}
+                    containerPath={`${blockPath}.if_true`}
+                    parentBlock={block}
                   />
                 </div>
               </div>
@@ -916,6 +952,9 @@ function BlockEditor({
                     onChange={(if_false) => onChange({ ...block, if_false })}
                     nested
                     customBlockOptions={customBlockOptions}
+                    onAiEdit={onAiEditBlock}
+                    containerPath={`${blockPath}.if_false`}
+                    parentBlock={block}
                   />
                 </div>
               </div>
@@ -954,6 +993,9 @@ function BlockEditor({
                     }
                     nested
                     customBlockOptions={customBlockOptions}
+                    onAiEdit={onAiEditBlock}
+                    containerPath={`${blockPath}.branches[${branchIndex}].blocks`}
+                    parentBlock={block}
                   />
                 </div>
               ))}
@@ -971,6 +1013,9 @@ function BlockEditor({
               onChange={(defaultBlocks) => onChange({ ...block, default: defaultBlocks })}
               nested
               customBlockOptions={customBlockOptions}
+              onAiEdit={onAiEditBlock}
+              containerPath={`${blockPath}.default`}
+              parentBlock={block}
             />
           </div>
         );
@@ -1003,6 +1048,19 @@ function BlockEditor({
     }
   }
 
+  async function handleAiEditSubmit() {
+    const instruction = aiInstruction.trim();
+    if (!instruction) return;
+    setAiWorking(true);
+    try {
+      await onAiEditSelf(instruction);
+      setAiInstruction("");
+      setAiOpen(false);
+    } finally {
+      setAiWorking(false);
+    }
+  }
+
   return (
     <div style={{ ...blockCard, borderTopColor: meta.accent }}>
       <div style={blockHeader}>
@@ -1026,11 +1084,41 @@ function BlockEditor({
         <button type="button" style={iconGhost} onClick={() => setCollapsed((current) => !current)}>
           {collapsed ? "+" : "–"}
         </button>
+        <button type="button" style={aiGhost} onClick={() => setAiOpen((current) => !current)}>
+          AI edit
+        </button>
         <button type="button" style={{ ...iconGhost, color: "#dc2626" }} onClick={onDelete}>
           ×
         </button>
       </div>
-      {!collapsed ? <div style={blockBody}>{body()}</div> : null}
+      {!collapsed ? (
+        <div style={blockBody}>
+          {body()}
+          {aiOpen ? (
+            <div style={aiEditBox}>
+              <input
+                value={aiInstruction}
+                onChange={(event) => setAiInstruction(event.target.value)}
+                placeholder='E.g. "Break this block into a conditional with 4 blocks"'
+                style={aiEditInput}
+              />
+              <div style={heroActions}>
+                <button type="button" style={toolbarSecondaryButton} onClick={() => setAiOpen(false)} disabled={aiWorking}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  style={toolbarPrimaryButton}
+                  onClick={() => void handleAiEditSubmit()}
+                  disabled={!aiInstruction.trim() || aiWorking}
+                >
+                  {aiWorking ? "Applying..." : "Apply"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1053,11 +1141,17 @@ function BlockListEditor({
   onChange,
   nested = false,
   customBlockOptions,
+  onAiEdit,
+  containerPath,
+  parentBlock = null,
 }: {
   blocks: PipelineBlock[];
   onChange: (blocks: PipelineBlock[]) => void;
   nested?: boolean;
   customBlockOptions: CustomBlockOption[];
+  onAiEdit: (block: PipelineBlock, instruction: string, context: BlockEditContext) => Promise<PipelineBlock[]>;
+  containerPath: string;
+  parentBlock?: PipelineBlock | null;
 }) {
   const droppableId = useRef(`droppable-${Math.random().toString(36).slice(2)}`).current;
 
@@ -1089,14 +1183,29 @@ function BlockListEditor({
                     opacity: dragSnapshot.isDragging ? 0.92 : 1,
                   }}
                 >
+                  {(() => {
+                    const context: BlockEditContext = {
+                      blockPath: `${containerPath}[${index}]`,
+                      parentContext: describeContainerContext(containerPath, parentBlock),
+                      siblingBlocks: blocks.filter((_, itemIndex) => itemIndex !== index),
+                    };
+                    return (
                   <BlockEditor
                     block={block}
                     index={index}
                     onChange={(next) => onChange(updateAt(blocks, index, next))}
                     onDelete={() => onChange(removeAt(blocks, index))}
+                    onAiEditSelf={async (instruction) => {
+                      const replacementBlocks = await onAiEdit(block, instruction, context);
+                      onChange(replaceAt(blocks, index, replacementBlocks));
+                    }}
+                    onAiEditBlock={onAiEdit}
                     dragHandleProps={dragProvided.dragHandleProps}
                     customBlockOptions={customBlockOptions}
+                    blockPath={context.blockPath}
                   />
+                    );
+                  })()}
                 </div>
               )}
             </Draggable>
@@ -1112,12 +1221,14 @@ function BlockListEditor({
 }
 
 interface Props {
+  feedId: string;
   sources: SourceSpec[];
   pipeline: PipelineBlock[];
-  onSave: (payload: { sources: SourceSpec[]; pipeline: PipelineBlock[] }) => Promise<void>;
+  onSave: (payload: { sources: SourceSpec[]; pipeline: PipelineBlock[]; versionLabel?: string }) => Promise<void>;
+  onFeedConfigChanged?: (config: { sources: SourceSpec[]; blocks: PipelineBlock[] }) => void;
 }
 
-export function PipelineEditor({ sources: initialSources, pipeline: initialPipeline, onSave }: Props) {
+export function PipelineEditor({ feedId, sources: initialSources, pipeline: initialPipeline, onSave, onFeedConfigChanged }: Props) {
   const normalizedInitialSources = useMemo(() => normalizeSources(initialSources), [initialSources]);
   const normalizedInitialPipeline = useMemo(() => normalizePipeline(initialPipeline), [initialPipeline]);
 
@@ -1127,6 +1238,18 @@ export function PipelineEditor({ sources: initialSources, pipeline: initialPipel
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
+  const [pipelineCollapsed, setPipelineCollapsed] = useState(false);
+  const [versionLabel, setVersionLabel] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [versions, setVersions] = useState<PipelineVersion[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [reverting, setReverting] = useState<string | null>(null);
+
+  useEffect(() => {
+    setSources(normalizedInitialSources);
+    setPipeline(normalizedInitialPipeline);
+  }, [normalizedInitialSources, normalizedInitialPipeline]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1151,17 +1274,69 @@ export function PipelineEditor({ sources: initialSources, pipeline: initialPipel
     JSON.stringify(sources) !== JSON.stringify(normalizedInitialSources) ||
     JSON.stringify(pipeline) !== JSON.stringify(normalizedInitialPipeline);
 
+  const loadVersions = useCallback(async () => {
+    setLoadingVersions(true);
+    try {
+      const result = await api.pipelineVersions.list(feedId);
+      setVersions(result);
+    } catch {
+      // non-critical
+    } finally {
+      setLoadingVersions(false);
+    }
+  }, [feedId]);
+
+  useEffect(() => {
+    if (historyOpen) loadVersions();
+  }, [historyOpen, loadVersions]);
+
   async function handleSave() {
     setSaving(true);
     setError(null);
     try {
-      await onSave({ sources, pipeline });
+      await onSave({ sources, pipeline, versionLabel: versionLabel.trim() || undefined });
+      setVersionLabel("");
       setSaved(true);
       setTimeout(() => setSaved(false), 2200);
+      if (historyOpen) loadVersions();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : String(nextError));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRevert(version: PipelineVersion) {
+    setReverting(version.id);
+    setError(null);
+    try {
+      const result = await api.pipelineVersions.revert(feedId, version.id);
+      const config = result.feed.config;
+      if (config) {
+        onFeedConfigChanged?.({ sources: config.sources, blocks: config.blocks });
+      }
+      await loadVersions();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+    } finally {
+      setReverting(null);
+    }
+  }
+
+  async function handleBlockAiEdit(block: PipelineBlock, instruction: string, context: BlockEditContext): Promise<PipelineBlock[]> {
+    setError(null);
+    try {
+      const result = await api.feeds.aiEditBlock(
+        feedId,
+        block,
+        sources,
+        context,
+        instruction,
+      );
+      return normalizePipeline(result.replacement_blocks);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : String(nextError));
+      throw nextError;
     }
   }
 
@@ -1180,6 +1355,24 @@ export function PipelineEditor({ sources: initialSources, pipeline: initialPipel
           {dirty ? <span style={{ ...metricPill, color: "#3154d3", borderColor: "#cdd9ff" }}>unsaved changes</span> : null}
         </div>
         <div style={heroActions}>
+          <input
+            type="text"
+            placeholder="Describe this change (optional)"
+            value={versionLabel}
+            onChange={(e) => setVersionLabel(e.target.value)}
+            style={{
+              fontSize: 13,
+              padding: "6px 12px",
+              borderRadius: 10,
+              border: "1px solid #d6deeb",
+              background: "#fff",
+              color: "#1c1c1e",
+              outline: "none",
+              width: 220,
+              opacity: dirty ? 1 : 0.45,
+            }}
+            disabled={!dirty || saving}
+          />
           <button type="button" style={toolbarSecondaryButton} onClick={resetAll} disabled={!dirty || saving}>
             Reset
           </button>
@@ -1192,7 +1385,18 @@ export function PipelineEditor({ sources: initialSources, pipeline: initialPipel
       {error ? <div style={errorBanner}>{error}</div> : null}
 
       <div style={contentShell}>
-        <SourceGroupsEditor sources={sources} onChange={setSources} />
+        <section style={sectionShell}>
+          <div style={sectionHeader}>
+            <div>
+              <p style={eyebrow}>Sources</p>
+              <p style={sectionDescription}>Edit the inputs feeding your pipeline. Sources are grouped by ingestion type so coverage is easier to reason about.</p>
+            </div>
+            <button type="button" style={sectionToggleButton} onClick={() => setSourcesCollapsed((current) => !current)}>
+              {sourcesCollapsed ? "Expand" : "Collapse"}
+            </button>
+          </div>
+          {!sourcesCollapsed ? <SourceGroupsEditor sources={sources} onChange={setSources} embedded /> : null}
+        </section>
 
         <section style={sectionShell}>
           <div style={sectionHeader}>
@@ -1200,8 +1404,112 @@ export function PipelineEditor({ sources: initialSources, pipeline: initialPipel
               <p style={eyebrow}>Pipeline</p>
               <p style={sectionDescription}>Arrange the block sequence, branch where needed, and use prompt mentions to reference article properties cleanly.</p>
             </div>
+            <button type="button" style={sectionToggleButton} onClick={() => setPipelineCollapsed((current) => !current)}>
+              {pipelineCollapsed ? "Expand" : "Collapse"}
+            </button>
           </div>
-          <BlockListEditor blocks={pipeline} onChange={setPipeline} customBlockOptions={customBlockOptions} />
+          {!pipelineCollapsed ? (
+            <BlockListEditor
+              blocks={pipeline}
+              onChange={setPipeline}
+              customBlockOptions={customBlockOptions}
+              onAiEdit={handleBlockAiEdit}
+              containerPath="pipeline"
+              parentBlock={null}
+            />
+          ) : null}
+        </section>
+
+        <section style={sectionShell}>
+          <div style={sectionHeader}>
+            <div>
+              <p style={eyebrow}>Version History</p>
+              <p style={sectionDescription}>Every save creates a new version. Revert to any previous configuration.</p>
+            </div>
+            <button
+              type="button"
+              style={sectionToggleButton}
+              onClick={() => setHistoryOpen((v) => !v)}
+            >
+              {historyOpen ? "Collapse" : "Expand"}
+            </button>
+          </div>
+          {historyOpen ? (
+            loadingVersions ? (
+              <p style={{ fontSize: 13, color: "#8e8e93", margin: "8px 0" }}>Loading…</p>
+            ) : versions.length === 0 ? (
+              <p style={{ fontSize: 13, color: "#8e8e93", margin: "8px 0" }}>No versions saved yet.</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {versions.map((v) => (
+                  <div
+                    key={v.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      border: v.is_active ? "1.5px solid #4c6fff" : "1px solid #e5e5ea",
+                      background: v.is_active ? "#f0f4ff" : "#fff",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                      <span style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: v.is_active ? "#4c6fff" : "#8e8e93",
+                        whiteSpace: "nowrap",
+                      }}>
+                        v{v.version_number}
+                      </span>
+                      {v.is_active ? (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "2px 7px",
+                          borderRadius: 999,
+                          background: "#4c6fff",
+                          color: "#fff",
+                        }}>
+                          ACTIVE
+                        </span>
+                      ) : null}
+                      <span style={{ fontSize: 13, color: "#3a3a3c", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {v.label ?? "No description"}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: "#8e8e93", whiteSpace: "nowrap" }}>
+                        {v.created_at ? new Date(v.created_at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}
+                      </span>
+                      {!v.is_active ? (
+                        <button
+                          type="button"
+                          disabled={reverting === v.id}
+                          onClick={() => handleRevert(v)}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            padding: "4px 12px",
+                            borderRadius: 8,
+                            border: "1px solid #d6deeb",
+                            background: "#fff",
+                            color: "#3154d3",
+                            cursor: "pointer",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {reverting === v.id ? "Reverting…" : "Revert"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : null}
         </section>
       </div>
     </div>
@@ -1239,6 +1547,35 @@ const heroActions: CSSProperties = {
   flexWrap: "wrap",
 };
 
+const aiEditBox: CSSProperties = {
+  display: "grid",
+  gap: 14,
+  marginTop: 14,
+  paddingTop: 14,
+  borderTop: "1px solid rgba(214, 222, 235, 0.95)",
+};
+
+const aiEditInput: CSSProperties = {
+  width: "100%",
+  border: "1px solid #d6deeb",
+  borderRadius: 12,
+  padding: "10px 12px",
+  fontSize: 14,
+  fontFamily: "inherit",
+  background: "#fff",
+};
+
+const aiGhost: CSSProperties = {
+  border: "1px solid rgba(49, 84, 211, 0.18)",
+  background: "rgba(49, 84, 211, 0.08)",
+  color: "#3154d3",
+  borderRadius: 12,
+  minWidth: "auto",
+  minHeight: 36,
+  paddingInline: 10,
+  fontWeight: 600,
+};
+
 const toolbarPrimaryButton: CSSProperties = {
   background: "#3154d3",
   color: "#ffffff",
@@ -1254,6 +1591,18 @@ const toolbarSecondaryButton: CSSProperties = {
   padding: "10px 16px",
   borderRadius: 14,
   fontWeight: 600,
+};
+
+const sectionToggleButton: CSSProperties = {
+  background: "rgba(255,255,255,0.92)",
+  color: "#4b5d79",
+  border: "1px solid rgba(214, 222, 235, 0.95)",
+  padding: "6px 10px",
+  borderRadius: 999,
+  fontSize: 12,
+  fontWeight: 700,
+  lineHeight: 1,
+  alignSelf: "flex-start",
 };
 
 const errorBanner: CSSProperties = {
@@ -1279,6 +1628,11 @@ const sectionShell: CSSProperties = {
   padding: 22,
   backdropFilter: "blur(12px)",
   boxShadow: "0 10px 30px rgba(15, 23, 42, 0.06)",
+};
+
+const embeddedSectionShell: CSSProperties = {
+  display: "grid",
+  gap: 0,
 };
 
 const sectionHeader: CSSProperties = {

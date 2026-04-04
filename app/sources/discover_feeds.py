@@ -88,7 +88,17 @@ async def discover_feeds_detailed(source_name: str) -> DiscoverFeedsResult:
         ),
     ]
 
+    # Strategies up to and including site_search_own_domain accumulate feeds
+    # across all attempts. After that checkpoint, return if anything was found.
+    # The remaining strategies (reddit, third_party, llm_fallback) only run
+    # when we still have zero feeds, and exit as soon as one of them succeeds.
+    ACCUMULATE_THROUGH = "site_search_own_domain"
+    accumulate_through_idx = next(
+        i for i, s in enumerate(strategies, start=1) if s.name == ACCUMULATE_THROUGH
+    )
+
     async with httpx.AsyncClient(follow_redirects=True, timeout=FEED_REQUEST_TIMEOUT) as http_client:
+        accumulated: list[DiscoveredFeed] = []
         for strategy_index, strategy in enumerate(strategies, start=1):
             candidates = await strategy.get_candidates(
                 source_name=source_name,
@@ -104,9 +114,19 @@ async def discover_feeds_detailed(source_name: str) -> DiscoverFeedsResult:
                 strategy_name=strategy.name,
                 strategy_index=strategy_index,
             )
-            if verified:
+            accumulated.extend(verified)
+
+            if strategy_index == accumulate_through_idx:
+                if accumulated:
+                    return DiscoverFeedsResult(
+                        feeds=accumulated,
+                        homepage=homepage,
+                        attempts_run=strategy_index,
+                        failures=failures.copy(),
+                    )
+            elif strategy_index > accumulate_through_idx and accumulated:
                 return DiscoverFeedsResult(
-                    feeds=verified,
+                    feeds=accumulated,
                     homepage=homepage,
                     attempts_run=strategy_index,
                     failures=failures.copy(),

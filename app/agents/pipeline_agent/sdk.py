@@ -26,7 +26,7 @@ from app.pipeline.schema import deserialize_pipeline
 
 from .evaluation import validate_live_sources
 from .logging import log, should_retry_agent_error
-from .source_specs import normalize_submitted_source_spec
+from .source_specs import normalize_submitted_source_spec, validate_source_spec
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_AGENT_MAX_ATTEMPTS = 3
@@ -332,5 +332,118 @@ def build_pipeline_submission_tool() -> Any:
             return {"content": [{"type": "text", "text": "Pipeline accepted"}]}
 
         return submit_pipeline
+
+    return factory
+
+
+def build_block_edit_submission_tool() -> Any:
+    def factory(store: dict[str, Any]) -> Any:
+        @tool(
+            "submit_block_edit",
+            "Submit the replacement block sequence for the selected block.",
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "replacement_blocks": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+                "required": ["replacement_blocks"],
+            },
+        )
+        async def submit_block_edit(args: dict[str, Any]) -> dict[str, Any]:
+            replacement_blocks = args.get("replacement_blocks", [])
+            if not isinstance(replacement_blocks, list) or not all(isinstance(item, dict) for item in replacement_blocks):
+                return {"content": [{"type": "text", "text": "replacement_blocks must be a list of block objects"}], "is_error": True}
+            try:
+                deserialize_pipeline(replacement_blocks)
+            except Exception as exc:
+                return {"content": [{"type": "text", "text": f"Invalid pipeline: {exc}"}], "is_error": True}
+            store["value"] = {"replacement_blocks": replacement_blocks}
+            return {"content": [{"type": "text", "text": "Block edit accepted"}]}
+
+        return submit_block_edit
+
+    return factory
+
+
+def build_audit_remediation_submission_tool(*, verbose: bool) -> Any:
+    def factory(store: dict[str, Any]) -> Any:
+        @tool(
+            "submit_audit_remediation",
+            "Submit the full revised source list and full revised pipeline after applying the audit report.",
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "sources": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "type": {"type": "string"},
+                                "feed": {"type": "string"},
+                            },
+                            "required": ["type", "feed"],
+                        },
+                    },
+                    "blocks_json": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                    "summary": {"type": "string"},
+                },
+                "required": ["sources", "blocks_json", "summary"],
+            },
+        )
+        async def submit_audit_remediation(args: dict[str, Any]) -> dict[str, Any]:
+            sources = args.get("sources", [])
+            blocks_json = args.get("blocks_json", [])
+            summary = str(args.get("summary", "")).strip()
+            if not isinstance(sources, list) or not all(isinstance(item, dict) for item in sources):
+                return {"content": [{"type": "text", "text": "sources must be a list of source objects"}], "is_error": True}
+            if not isinstance(blocks_json, list) or not all(isinstance(item, dict) for item in blocks_json):
+                return {"content": [{"type": "text", "text": "blocks_json must be a list of block objects"}], "is_error": True}
+            if not summary:
+                return {"content": [{"type": "text", "text": "summary must be non-empty"}], "is_error": True}
+
+            try:
+                validated_sources = [
+                    validate_source_spec(item, label=f"audit remediation source[{index}]")
+                    for index, item in enumerate(sources)
+                ]
+            except Exception as exc:
+                return {"content": [{"type": "text", "text": str(exc)}], "is_error": True}
+
+            try:
+                deserialize_pipeline(blocks_json)
+            except Exception as exc:
+                return {"content": [{"type": "text", "text": f"Invalid pipeline: {exc}"}], "is_error": True}
+
+            valid_sources, failed_sources = await validate_live_sources(
+                validated_sources,
+                label="audit remediation source",
+                verbose=verbose,
+            )
+            if failed_sources:
+                lines = [f"{len(valid_sources)} sources accepted, {len(failed_sources)} failed validation:"]
+                for src, reason in failed_sources:
+                    lines.append(f"  - {src.get('type', '')}:{src.get('feed', '')}: {reason}")
+                if not valid_sources:
+                    return {"content": [{"type": "text", "text": "\n".join(lines)}], "is_error": True}
+                lines.append("Resubmit with a fully valid source set.")
+                return {"content": [{"type": "text", "text": "\n".join(lines)}], "is_error": True}
+
+            store["value"] = {
+                "sources": valid_sources,
+                "blocks_json": blocks_json,
+                "summary": summary,
+            }
+            return {"content": [{"type": "text", "text": "Audit remediation accepted"}]}
+
+        return submit_audit_remediation
 
     return factory

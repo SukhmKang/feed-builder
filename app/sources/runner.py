@@ -195,12 +195,18 @@ async def fetch_articles(sources: list[SourceSpec]) -> list[dict[str, Any]]:
 
     seen_ids: set[str] = set()
     articles: list[dict[str, Any]] = []
-    for source_articles in results:
+    for source, source_articles in zip(sources, results, strict=False):
+        if isinstance(source_articles, Exception):
+            continue
         for article in source_articles:
             article_id = str(article.get("id", "")).strip()
             if not article_id or article_id in seen_ids:
                 continue
             seen_ids.add(article_id)
+            # Stamp the logical source spec key onto the article so the DB can filter
+            # by spec (type, feed) without needing to reverse-resolve URLs.
+            article["spec_source_type"] = str(source.get("type", "")).strip()
+            article["spec_source_feed"] = str(source.get("feed", "")).strip()
             articles.append(article)
 
     await asyncio.to_thread(_write_articles_sync, articles, observations)

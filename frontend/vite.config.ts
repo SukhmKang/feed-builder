@@ -6,7 +6,6 @@ export default defineConfig({
   server: {
     proxy: {
       "/feeds": "http://localhost:8000",
-      "/push": "http://localhost:8000",
       "/health": "http://localhost:8000",
     },
   },

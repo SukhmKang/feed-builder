@@ -3,6 +3,11 @@ import logging
 from typing import Any
 
 from app.ai.llm import generate_text
+from app.ai.critic_utils import (
+    load_json_object as _load_json_object,
+    require_keys as _require_keys,
+    run_structured_step,
+)
 
 CRITIC_PROVIDER = "anthropic"
 CRITIC_MAX_ATTEMPTS = 2
@@ -10,7 +15,6 @@ CRITIC_SAMPLE_LIMIT = 20
 CRITIC_CONTENT_LIMIT = 300
 CRITIC_MAX_TOKENS_STEP_1 = 1200
 CRITIC_MAX_TOKENS_STEP_2 = 1400
-CRITIC_RESPONSE_LOG_SNIPPET_CHARS = 500
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +57,7 @@ async def run_critic(
     Both steps return structured JSON that is validated locally.
     """
     step_1_input = _format_article_samples(topic=topic, passed=passed, filtered=filtered)
-    step_1_result = await _run_structured_step(
+    step_1_result = await _run_step(
         task_prompt=step_1_input,
         system_prompt=_build_step_1_system_prompt(),
         model=model,
@@ -67,7 +71,7 @@ async def run_critic(
         assessment=step_1_result,
         blocks_json=blocks_json,
     )
-    return await _run_structured_step(
+    return await _run_step(
         task_prompt=step_2_input,
         system_prompt=_build_step_2_system_prompt(),
         model=model,
@@ -77,7 +81,7 @@ async def run_critic(
     )
 
 
-async def _run_structured_step(
+async def _run_step(
     *,
     task_prompt: str,
     system_prompt: str,
@@ -86,68 +90,17 @@ async def _run_structured_step(
     validator,
     label: str,
 ) -> dict[str, Any]:
-    validation_error = ""
-    raw_response = ""
-    parsed: dict[str, Any] | None = None
-
-    logger.info(
-        "%s start model=%s max_tokens=%s task_prompt_chars=%s system_prompt_chars=%s",
-        label,
-        model,
-        max_tokens,
-        len(task_prompt),
-        len(system_prompt),
+    return await run_structured_step(
+        task_prompt=task_prompt,
+        system_prompt=system_prompt,
+        model=model,
+        provider=CRITIC_PROVIDER,
+        max_tokens=max_tokens,
+        max_attempts=CRITIC_MAX_ATTEMPTS,
+        validator=validator,
+        label=label,
+        generate_text_fn=generate_text,
     )
-
-    for attempt in range(1, CRITIC_MAX_ATTEMPTS + 1):
-        prompt = _build_retryable_task_prompt(task_prompt, validation_error, raw_response)
-        logger.info(
-            "%s attempt=%s prompt_chars=%s retrying=%s",
-            label,
-            attempt,
-            len(prompt),
-            bool(validation_error),
-        )
-        raw_response = await generate_text(
-            prompt,
-            provider=CRITIC_PROVIDER,
-            model=model,
-            max_tokens=max_tokens,
-            system=system_prompt,
-            json_output=True,
-        )
-        logger.info(
-            "%s attempt=%s response_chars=%s response_head=%r response_tail=%r",
-            label,
-            attempt,
-            len(raw_response),
-            raw_response[:CRITIC_RESPONSE_LOG_SNIPPET_CHARS],
-            raw_response[-CRITIC_RESPONSE_LOG_SNIPPET_CHARS:],
-        )
-        try:
-            parsed = validator(raw_response)
-            logger.info("%s attempt=%s validation=success", label, attempt)
-            break
-        except ValueError as exc:
-            validation_error = str(exc)
-            logger.warning(
-                "%s attempt=%s validation=failed error=%s response_tail=%r",
-                label,
-                attempt,
-                validation_error,
-                raw_response[-CRITIC_RESPONSE_LOG_SNIPPET_CHARS:],
-            )
-
-    if parsed is None:
-        logger.error(
-            "%s failed after %s attempts final_error=%s final_response_tail=%r",
-            label,
-            CRITIC_MAX_ATTEMPTS,
-            validation_error,
-            raw_response[-CRITIC_RESPONSE_LOG_SNIPPET_CHARS:],
-        )
-        raise ValueError(f"{label} returned malformed JSON after retry: {validation_error}")
-    return parsed
 
 
 def _build_step_1_system_prompt() -> str:
@@ -192,20 +145,6 @@ def _build_step_2_system_prompt() -> str:
             "Do not include markdown fences, prose, or any text outside the JSON object.",
         ]
     )
-
-
-def _build_retryable_task_prompt(task_prompt: str, validation_error: str, raw_response: str) -> str:
-    prompt_parts = [task_prompt.strip()]
-    if validation_error:
-        prompt_parts.extend(
-            [
-                "Your previous response could not be parsed or did not conform to the required format.",
-                f"Validation error: {validation_error}",
-                "Rewrite the answer so it strictly matches the required JSON schema.",
-                f"Previous response: {raw_response}",
-            ]
-        )
-    return "\n\n".join(prompt_parts)
 
 
 def _format_article_samples(*, topic: str, passed: list[dict[str, Any]], filtered: list[dict[str, Any]]) -> str:
@@ -309,23 +248,6 @@ def _validate_final_output(raw_response: str) -> dict[str, Any]:
                 raise ValueError(f"critic output.suggested_changes[{index}].{key} must be a non-empty string")
 
     return parsed
-
-
-def _load_json_object(raw_response: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(raw_response)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"Response was not valid JSON: {exc}") from exc
-
-    if not isinstance(parsed, dict):
-        raise ValueError("Response must be a JSON object")
-    return parsed
-
-
-def _require_keys(mapping: dict[str, Any], keys: set[str], label: str) -> None:
-    missing_keys = keys.difference(mapping.keys())
-    if missing_keys:
-        raise ValueError(f"{label} is missing keys: {', '.join(sorted(missing_keys))}")
 
 
 __all__ = ["run_critic"]

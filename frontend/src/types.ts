@@ -22,7 +22,6 @@ export type PipelineCondition =
   | { type: "length"; field: string; min: number; max: number }
   | { type: "published_after"; days_ago: number }
   | { type: "published_before"; days_ago: number }
-  | { type: "similarity_score"; threshold: number; operator: "gt" | "lt" }
   | { type: "llm"; prompt: string; tier?: PipelineTier };
 
 export interface SwitchBranch {
@@ -49,6 +48,17 @@ export type PipelineBlock =
   | { type: "switch"; branches: SwitchBranch[]; default: PipelineBlock[] }
   | { type: "custom_block"; name: string };
 
+export interface PipelineVersion {
+  id: string;
+  feed_id: string;
+  version_number: number;
+  is_active: boolean;
+  has_been_replayed: boolean;
+  label: string | null;
+  created_at: string | null;
+  config: { sources: SourceSpec[]; blocks: PipelineBlock[]; topic?: string } | null;
+}
+
 // ─── Feed / Article types ─────────────────────────────────────────────────────
 
 export interface Feed {
@@ -56,12 +66,12 @@ export interface Feed {
   name: string;
   topic: string;
   status: "building" | "ready" | "error";
-  notifications_enabled: boolean;
   poll_interval_hours: number;
   created_at: string | null;
   last_polled_at: string | null;
   error_message: string | null;
   config: { sources: SourceSpec[]; blocks: PipelineBlock[] } | null;
+  active_version_replayed: boolean;
 }
 
 export interface NitterMedia {
@@ -99,6 +109,7 @@ export interface Article {
   id: string;
   feed_id: string;
   passed: boolean;
+  manual_verdict: "passed" | "filtered" | null;
   fetched_at: string | null;
   article: {
     id: string;
@@ -137,4 +148,96 @@ export interface StorySummary {
 
 export interface StoryDetail extends StorySummary {
   articles: Article["article"][];
+}
+
+// ─── Audit types ──────────────────────────────────────────────────────────────
+
+export interface AuditSummary {
+  id: string;
+  feed_id: string;
+  status: "pending" | "running" | "complete" | "error";
+  audit_period_start: string | null;
+  audit_period_end: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  error_message: string | null;
+  pipeline_version_id: string | null;
+  pipeline_version_number: number | null;
+}
+
+export interface AuditReport {
+  feed_id: string;
+  topic: string;
+  audit_period_start: string;
+  audit_period_end: string;
+  stats: {
+    total_articles: number;
+    passed_count: number;
+    filtered_count: number;
+    overall_pass_rate: number;
+    manual_override_count: number;
+    per_source: Array<{
+      source_type: string;
+      source_name: string;
+      source_feed: string;
+      total_articles: number;
+      passed_count: number;
+      filtered_count: number;
+      pass_rate: number;
+    }>;
+    weekly_trend: Array<{
+      week_label: string;
+      total_articles: number;
+      passed_count: number;
+      pass_rate: number;
+    }>;
+  };
+  assessment: {
+    passed_quality: string;
+    filtered_quality: string;
+    source_quality: string;
+    coverage_gaps: string;
+    noise_patterns: string;
+    volume_health: string;
+  };
+  manual_override_assessment: {
+    summary: string;
+    false_positives: string;
+    false_negatives: string;
+    patterns: string;
+    suggested_focus: string;
+  } | null;
+  pipeline_recommendations: {
+    satisfied: boolean;
+    feedback: string;
+    issues: Record<string, string>;
+    suggested_changes: Array<Record<string, string>>;
+  };
+  source_recommendations: {
+    satisfied: boolean;
+    feedback: string;
+    suggested_changes: Array<{
+      action: string;
+      source_type: string;
+      source_feeds: string[];
+      reason: string;
+      coverage_gap_description: string;
+    }>;
+  };
+  proposed_new_sources: Array<Record<string, string>>;
+  current_config_snapshot: { sources: SourceSpec[]; blocks: PipelineBlock[] };
+  generated_at: string;
+}
+
+export interface AuditDetail extends AuditSummary {
+  report: AuditReport | null;
+  proposed_config: { sources: SourceSpec[]; blocks: PipelineBlock[]; _summary?: string } | null;
+}
+
+export interface ApplyAuditResult {
+  saved: boolean;
+  summary: string;
+  proposed_config: { sources: SourceSpec[]; blocks: PipelineBlock[] };
+  feed?: Feed;
 }

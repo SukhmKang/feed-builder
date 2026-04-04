@@ -119,6 +119,7 @@ async def _pick_homepage_with_haiku(source_name: str, candidates: list[WebSearch
         "Pick the official homepage URL for this source.",
         "Return JSON only in this shape:",
         json.dumps({"homepage_url": "https://example.com"}, indent=2),
+        'If you are not confident, return {"homepage_url": null} rather than guessing.',
         "You may choose one of the candidate URLs below, or provide a different homepage URL if the right one is obvious.",
         "Do not return Wikipedia, Reddit, Feedspot, social media, or feed/discovery directories as the homepage.",
         f"Source name: {source_name}",
@@ -144,8 +145,11 @@ async def _pick_homepage_with_haiku(source_name: str, candidates: list[WebSearch
     if not isinstance(parsed, dict):
         return None
 
-    homepage_value = str(parsed.get("homepage_url", "")).strip()
-    homepage = _normalize_homepage_candidate(homepage_value)
+    homepage_value = parsed.get("homepage_url")
+    if homepage_value is None:  # explicit null from LLM
+        return None
+
+    homepage = _normalize_homepage_candidate(str(homepage_value).strip())
     if not homepage:
         return None
 

@@ -5,7 +5,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.database import Feed, Story, get_db
+from app.database import Article, Feed, PipelineVersion, Story, StoryArticle, get_db
 from app.services.stories import serialize_story_detail, serialize_story_summary
 
 router = APIRouter(prefix="/feeds/{feed_id}/stories", tags=["stories"])
@@ -16,16 +16,43 @@ def list_stories(
     feed_id: str,
     db: Session = Depends(get_db),
 ) -> list[dict[str, Any]]:
+    from sqlalchemy import exists
+
     feed = db.get(Feed, feed_id)
     if feed is None:
         raise HTTPException(status_code=404, detail="Feed not found")
 
-    stories = (
-        db.query(Story)
-        .filter(Story.feed_id == feed_id, Story.status == "active")
-        .order_by(Story.last_published_at.desc(), Story.updated_at.desc())
-        .all()
+    # Find replay floor — most recent replayed version
+    floor = (
+        db.query(PipelineVersion)
+        .filter(
+            PipelineVersion.feed_id == feed_id,
+            PipelineVersion.has_been_replayed.is_(True),
+        )
+        .order_by(PipelineVersion.version_number.desc())
+        .first()
     )
+
+    query = db.query(Story).filter(Story.feed_id == feed_id, Story.status == "active")
+
+    if floor:
+        floor_version_ids = [
+            v.id
+            for v in db.query(PipelineVersion).filter(
+                PipelineVersion.feed_id == feed_id,
+                PipelineVersion.version_number >= floor.version_number,
+            ).all()
+        ]
+        # Only include stories that have at least one article from floor onwards
+        query = query.filter(
+            exists().where(
+                (StoryArticle.story_id == Story.id)
+                & (StoryArticle.article_id == Article.id)
+                & Article.pipeline_version_id.in_(floor_version_ids)
+            )
+        )
+
+    stories = query.order_by(Story.last_published_at.desc(), Story.updated_at.desc()).all()
     return [serialize_story_summary(db, story) for story in stories]
 
 

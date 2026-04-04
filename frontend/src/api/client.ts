@@ -1,4 +1,4 @@
-import type { Article, CustomBlockOption, Feed, PipelineBlock, SourceSpec, StoryDetail, StorySummary } from "../types";
+import type { ApplyAuditResult, Article, AuditDetail, AuditSummary, CustomBlockOption, Feed, PipelineBlock, PipelineVersion, SourceSpec, StoryDetail, StorySummary } from "../types";
 
 // In dev, leave empty so Vite's proxy handles it.
 // In production, set VITE_API_URL=https://api.yourdomain.com
@@ -30,13 +30,36 @@ export const api = {
       id: string,
       data: {
         name?: string;
-        notifications_enabled?: boolean;
         poll_interval_hours?: number;
         blocks?: PipelineBlock[];
         sources?: SourceSpec[];
+        version_label?: string;
       },
     ) =>
       request<Feed>(`/feeds/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    aiEditBlock: (
+      id: string,
+      block: PipelineBlock,
+      sources: SourceSpec[],
+      context: { blockPath: string; parentContext: string; siblingBlocks: PipelineBlock[] },
+      instruction: string,
+    ) =>
+      request<{ replacement_blocks: PipelineBlock[] }>(`/feeds/${id}/ai-edit-block`, {
+        method: "POST",
+        body: JSON.stringify({
+          block,
+          sources,
+          block_path: context.blockPath,
+          parent_context: context.parentContext,
+          sibling_blocks: context.siblingBlocks,
+          instruction,
+        }),
+      }),
+    replay: (id: string, lookbackDays?: number) =>
+      request<{ status: string }>(`/feeds/${id}/replay`, {
+        method: "POST",
+        body: JSON.stringify({ lookback_days: lookbackDays ?? null }),
+      }),
     listCustomBlocks: () => request<CustomBlockOption[]>("/feeds/custom-blocks"),
     delete: (id: string) => request<void>(`/feeds/${id}`, { method: "DELETE" }),
     poll: (id: string, lookbackHours?: number) => {
@@ -46,26 +69,49 @@ export const api = {
       return request<{ status: string }>(`/feeds/${id}/poll${suffix}`, { method: "POST" });
     },
   },
+  pipelineVersions: {
+    list: (feedId: string) =>
+      request<PipelineVersion[]>(`/feeds/${feedId}/pipeline-versions`),
+    revert: (feedId: string, versionId: string) =>
+      request<{ version: PipelineVersion; feed: Feed }>(
+        `/feeds/${feedId}/pipeline-versions/${versionId}/revert`,
+        { method: "POST" },
+      ),
+  },
+  audits: {
+    list: (feedId: string) => request<AuditSummary[]>(`/feeds/${feedId}/audits`),
+    get: (feedId: string, auditId: string) => request<AuditDetail>(`/feeds/${feedId}/audits/${auditId}`),
+    trigger: (
+      feedId: string,
+      data: { start: string; end: string; enable_replay?: boolean; enable_discovery?: boolean },
+    ) =>
+      request<{ status: string; message: string }>(`/feeds/${feedId}/audits`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    apply: (feedId: string, auditId: string, save: boolean, force = false) =>
+      request<ApplyAuditResult>(`/feeds/${feedId}/audits/${auditId}/apply`, {
+        method: "POST",
+        body: JSON.stringify({ save, force }),
+      }),
+    delete: (feedId: string, auditId: string) =>
+      request<void>(`/feeds/${feedId}/audits/${auditId}`, { method: "DELETE" }),
+  },
   articles: {
     list: (feedId: string, passed?: boolean, offset = 0, limit = 50) => {
       const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
       if (passed !== undefined) params.set("passed", String(passed));
       return request<Article[]>(`/feeds/${feedId}/articles?${params}`);
     },
+    setManualVerdict: (feedId: string, articleId: string, verdict: "passed" | "filtered" | null) =>
+      request<Article>(`/feeds/${feedId}/articles/${articleId}/manual-verdict`, {
+        method: "PATCH",
+        body: JSON.stringify({ verdict }),
+      }),
   },
   stories: {
     list: (feedId: string) => request<StorySummary[]>(`/feeds/${feedId}/stories`),
     get: (feedId: string, storyId: string) => request<StoryDetail>(`/feeds/${feedId}/stories/${storyId}`),
-  },
-  push: {
-    getPublicKey: () => request<{ publicKey: string }>("/push/vapid-public-key"),
-    subscribe: (feed_id: string, subscription: PushSubscriptionJSON) =>
-      request<{ status: string }>("/push/subscribe", {
-        method: "POST",
-        body: JSON.stringify({ feed_id, subscription }),
-      }),
-    unsubscribe: (feed_id: string) =>
-      request<void>(`/push/subscribe/${feed_id}`, { method: "DELETE" }),
   },
 };
 
@@ -73,11 +119,4 @@ export function getFeedRssUrl(feedId: string): string {
   const path = `/feeds/${feedId}/rss`;
   if (BASE) return `${BASE}${path}`;
   return `${window.location.origin}${path}`;
-}
-
-export function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = window.atob(base64);
-  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
 }
