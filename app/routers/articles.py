@@ -50,7 +50,7 @@ def _article_sort_key(payload: dict[str, Any]) -> tuple[datetime, datetime]:
     return (published_at, fetched_at)
 
 
-def _effective_passed(article: Article) -> bool:
+def effective_passed(article: Article) -> bool:
     if article.manual_verdict == "passed":
         return True
     if article.manual_verdict == "filtered":
@@ -58,19 +58,8 @@ def _effective_passed(article: Article) -> bool:
     return bool(article.passed)
 
 
-@router.get("")
-def list_articles(
-    feed_id: str,
-    passed: bool | None = Query(default=None, description="Filter by pass/fail. Omit for all."),
-    limit: int = Query(default=50, le=200),
-    offset: int = Query(default=0, ge=0),
-    db: Session = Depends(get_db),
-) -> list[dict[str, Any]]:
-    feed = db.get(Feed, feed_id)
-    if feed is None:
-        raise HTTPException(status_code=404, detail="Feed not found")
-
-    # Find replay floor: most recent version that has been replayed for this feed
+def query_feed_articles(feed_id: str, db: Session) -> list[Article]:
+    """Return articles for a feed, applying the pipeline version floor when a replay exists."""
     floor = (
         db.query(PipelineVersion)
         .filter(
@@ -88,16 +77,28 @@ def list_articles(
                 PipelineVersion.version_number >= floor.version_number,
             ).all()
         ]
-        q = db.query(Article).filter(
+        return db.query(Article).filter(
             Article.feed_id == feed_id,
             Article.pipeline_version_id.in_(version_ids),
-        )
-    else:
-        q = db.query(Article).filter(Article.feed_id == feed_id)
+        ).all()
+    return db.query(Article).filter(Article.feed_id == feed_id).all()
 
-    rows = q.all()
+
+@router.get("")
+def list_articles(
+    feed_id: str,
+    passed: bool | None = Query(default=None, description="Filter by pass/fail. Omit for all."),
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    feed = db.get(Feed, feed_id)
+    if feed is None:
+        raise HTTPException(status_code=404, detail="Feed not found")
+
+    rows = query_feed_articles(feed_id, db)
     if passed is not None:
-        rows = [article for article in rows if _effective_passed(article) == passed]
+        rows = [article for article in rows if effective_passed(article) == passed]
     articles = [_article_to_dict(a) for a in rows]
     articles.sort(key=_article_sort_key, reverse=True)
     return articles[offset : offset + limit]
@@ -132,7 +133,7 @@ async def set_manual_verdict(
     # Sync story membership based on new effective verdict
     from app.services.stories import assign_article_to_story, remove_article_from_stories
 
-    if _effective_passed(article):
+    if effective_passed(article):
         # Article now effectively passes — assign to a story if not already linked
         already_linked = db.query(StoryArticle).filter(
             StoryArticle.article_id == article.id

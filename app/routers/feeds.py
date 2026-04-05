@@ -253,15 +253,14 @@ def get_feed_rss(
     request: Request,
     db: Session = Depends(get_db),
 ) -> Response:
+    from app.routers.articles import effective_passed, query_feed_articles
+
     feed = db.get(Feed, feed_id)
     if feed is None:
         raise HTTPException(status_code=404, detail="Feed not found")
 
-    articles = (
-        db.query(Article)
-        .filter(Article.feed_id == feed_id, Article.passed.is_(True))
-        .all()
-    )
+    rows = query_feed_articles(feed_id, db)
+    articles = [r for r in rows if effective_passed(r)]
     articles.sort(key=_article_sort_key, reverse=True)
     xml = _build_feed_rss_xml(feed, request, articles[:FEED_RSS_ARTICLE_LIMIT])
     return Response(content=xml, media_type="application/rss+xml; charset=utf-8")
