@@ -113,27 +113,67 @@ async def _run_build_feed_job(feed_id: str, topic: str, max_iterations: int) -> 
         feed = db.get(Feed, feed_id)
         if feed is None:
             return
+    finally:
+        db.close()
+
+    try:
+        logger.info("build_feed_job start feed_id=%s topic=%r", feed_id, topic)
+        result = await build_feed_config(topic, max_iterations=max_iterations)
+        blocks_json = result.get("blocks_json", [])
+        if isinstance(blocks_json, list):
+            compiled_blocks = await compile_llm_filter_batches(blocks_json)
+            result["blocks_json"] = compiled_blocks
+            final_config = result.get("final_config")
+            if isinstance(final_config, dict):
+                final_config["blocks"] = compiled_blocks
+    except Exception as exc:
+        logger.exception("build_feed_job failed feed_id=%s topic=%r", feed_id, topic)
+        db = SessionLocal()
         try:
-            logger.info("build_feed_job start feed_id=%s topic=%r", feed_id, topic)
-            result = await build_feed_config(topic, max_iterations=max_iterations)
-            blocks_json = result.get("blocks_json", [])
-            if isinstance(blocks_json, list):
-                compiled_blocks = await compile_llm_filter_batches(blocks_json)
-                result["blocks_json"] = compiled_blocks
-                final_config = result.get("final_config")
-                if isinstance(final_config, dict):
-                    final_config["blocks"] = compiled_blocks
-            feed.config_json = json.dumps(result.get("final_config", {}))
-            feed.agent_output_json = json.dumps(result)
-            feed.name = topic[:80]
-            feed.status = "ready"
-            create_pipeline_version(feed_id, feed.config_json, db, label="Initial version")
-            logger.info("build_feed_job done feed_id=%s", feed_id)
-        except Exception as exc:
+            feed = db.get(Feed, feed_id)
+            if feed is None:
+                return
             feed.status = "error"
             feed.error_message = str(exc)
-            logger.exception("build_feed_job failed feed_id=%s topic=%r", feed_id, topic)
+            db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("build_feed_job failed to persist error state feed_id=%s", feed_id)
+        finally:
+            db.close()
+        return
+
+    db = SessionLocal()
+    try:
+        feed = db.get(Feed, feed_id)
+        if feed is None:
+            return
+        feed.config_json = json.dumps(result.get("final_config", {}))
+        feed.agent_output_json = json.dumps(result)
+        feed.name = topic[:80]
+        feed.status = "ready"
+        feed.error_message = None
+        create_pipeline_version(feed_id, feed.config_json, db, label="Initial version")
         db.commit()
+        logger.info("build_feed_job done feed_id=%s", feed_id)
+    except Exception:
+        db.rollback()
+        logger.exception("build_feed_job failed during persistence feed_id=%s topic=%r", feed_id, topic)
+        error_text = "Failed to persist build result"
+        db.close()
+        db = SessionLocal()
+        try:
+            feed = db.get(Feed, feed_id)
+            if feed is not None:
+                feed.status = "error"
+                feed.error_message = error_text
+                db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("build_feed_job failed to persist persistence error feed_id=%s", feed_id)
+        finally:
+            db.close()
+        return
     finally:
         db.close()
 

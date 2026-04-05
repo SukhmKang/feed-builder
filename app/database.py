@@ -23,6 +23,8 @@ DATABASE_URL = _get_database_url()
 ENGINE_KWARGS = {"pool_pre_ping": True}
 if DATABASE_URL.startswith("sqlite"):
     ENGINE_KWARGS["connect_args"] = {"check_same_thread": False}
+else:
+    ENGINE_KWARGS["pool_recycle"] = 1800
 
 engine = create_engine(DATABASE_URL, **ENGINE_KWARGS)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
