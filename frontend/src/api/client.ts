@@ -112,6 +112,11 @@ export const api = {
   stories: {
     list: (feedId: string) => request<StorySummary[]>(`/feeds/${feedId}/stories`),
     get: (feedId: string, storyId: string) => request<StoryDetail>(`/feeds/${feedId}/stories/${storyId}`),
+    update: (feedId: string, storyId: string, data: { title: string }) =>
+      request<StorySummary>(`/feeds/${feedId}/stories/${storyId}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
   },
 };
 

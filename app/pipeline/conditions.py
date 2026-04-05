@@ -12,13 +12,12 @@ from app.pipeline.core import (
     collect_search_text,
     copy_article,
     dedupe_strings,
-    ensure_tags,
     find_matching_terms,
     flatten_text,
     is_string_list,
     normalize_for_keyword_search,
     parse_article_datetime,
-    tag_matches_pattern,
+    truncate_for_llm_prompt,
     value_exists,
 )
 from app.pipeline.llm_config import LLMTier, VALID_LLM_TIERS, resolve_tier_model
@@ -29,7 +28,9 @@ LLM_CONDITION_SCHEMA_EXAMPLE = {
     "justification": "One line explanation.",
 }
 
-PROMPT_PLACEHOLDERS = ("title", "content", "source_name", "tags")
+LLM_CONDITION_TITLE_MAX_CHARS = 300
+LLM_CONDITION_CONTENT_MAX_CHARS = 2000
+LLM_CONDITION_SOURCE_NAME_MAX_CHARS = 200
 
 
 @dataclass(slots=True)
@@ -126,44 +127,6 @@ class FieldMatchesRegexCondition:
     async def evaluate(self, article: dict[str, Any]) -> bool:
         value = flatten_text(article.get(self.field))
         return re.search(self.pattern, value) is not None
-
-
-@dataclass(slots=True)
-class TagExistsCondition:
-    """Require that the article contains an exact tag."""
-
-    tag: str
-
-    async def evaluate(self, article: dict[str, Any]) -> bool:
-        tags = ensure_tags(copy_article(article))
-        return self.tag in tags
-
-
-@dataclass(slots=True)
-class TagCondition:
-    """Tag predicate with `has` / `not_has` operators."""
-
-    tag: str
-    operator: str = "has"
-
-    async def evaluate(self, article: dict[str, Any]) -> bool:
-        tags = ensure_tags(copy_article(article))
-        if self.operator == "has":
-            return self.tag in tags
-        if self.operator == "not_has":
-            return self.tag not in tags
-        raise ValueError(f"Unsupported TagCondition operator: {self.operator}")
-
-
-@dataclass(slots=True)
-class TagMatchesCondition:
-    """Require that at least one tag matches a glob pattern such as `branch:*`."""
-
-    pattern: str
-
-    async def evaluate(self, article: dict[str, Any]) -> bool:
-        tags = ensure_tags(copy_article(article))
-        return any(tag_matches_pattern(tag, self.pattern) for tag in tags)
 
 
 @dataclass(slots=True)
@@ -267,15 +230,7 @@ class LLMCondition:
             raise ValueError(f"Unsupported LLMCondition tier: {self.tier}")
 
     async def evaluate(self, article: dict[str, Any]) -> bool:
-        rendered_prompt = _render_prompt_template(
-            self.prompt,
-            {
-                "title": str(article.get("title", "")),
-                "content": str(article.get("content", "")),
-                "source_name": str(article.get("source_name", "")),
-                "tags": ", ".join(ensure_tags(copy_article(article))),
-            },
-        )
+        article_context = _build_article_context(article)
 
         validation_error = ""
         raw_response = ""
@@ -283,7 +238,7 @@ class LLMCondition:
         for _ in range(LLM_CONDITION_MAX_ATTEMPTS):
             provider, model = resolve_tier_model(self.tier)
             raw_response = await generate_text(
-                _build_llm_condition_task_prompt(rendered_prompt, validation_error, raw_response),
+                _build_llm_condition_task_prompt(self.prompt, article_context, validation_error, raw_response),
                 provider=provider,
                 model=model,
                 max_tokens=400,
@@ -348,11 +303,15 @@ def _normalized_domain(value: Any) -> str:
     return hostname
 
 
-def _render_prompt_template(template: str, values: dict[str, str]) -> str:
-    rendered = str(template)
-    for placeholder in PROMPT_PLACEHOLDERS:
-        rendered = rendered.replace("{" + placeholder + "}", values.get(placeholder, ""))
-    return rendered
+def _build_article_context(article: dict[str, Any]) -> str:
+    parts = []
+    if title := truncate_for_llm_prompt(article.get("title", ""), max_chars=LLM_CONDITION_TITLE_MAX_CHARS):
+        parts.append(f"Title: {title}")
+    if source := truncate_for_llm_prompt(article.get("source_name", ""), max_chars=LLM_CONDITION_SOURCE_NAME_MAX_CHARS):
+        parts.append(f"Source: {source}")
+    if content := truncate_for_llm_prompt(article.get("content", ""), max_chars=LLM_CONDITION_CONTENT_MAX_CHARS):
+        parts.append(f"Content:\n{content}")
+    return "\n\n".join(parts)
 
 
 def _build_llm_condition_system_prompt() -> str:
@@ -370,10 +329,11 @@ def _build_llm_condition_system_prompt() -> str:
     )
 
 
-def _build_llm_condition_task_prompt(rendered_prompt: str, validation_error: str, raw_response: str) -> str:
+def _build_llm_condition_task_prompt(instructions: str, article_context: str, validation_error: str, raw_response: str) -> str:
     prompt_parts = [
         "Use the following task instructions and article data to decide whether the condition passes.",
-        rendered_prompt.strip(),
+        instructions.strip(),
+        f"Article:\n{article_context}",
     ]
 
     if validation_error:
@@ -424,7 +384,4 @@ __all__ = [
     "SourceNameCondition",
     "SourceTypeCondition",
     "SourceUrlCondition",
-    "TagCondition",
-    "TagExistsCondition",
-    "TagMatchesCondition",
 ]

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import Article, Feed, PipelineVersion, create_pipeline_version, get_db
-from app.services.feed_builder import build_feed
+from app.worker.client import dispatch_build_feed, dispatch_poll, dispatch_replay
 
 router = APIRouter(prefix="/feeds", tags=["feeds"])
 logger = logging.getLogger(__name__)
@@ -178,46 +178,23 @@ def _list_custom_block_metadata() -> list[dict[str, str | None]]:
 
 
 async def _run_build_feed(feed_id: str, topic: str) -> None:
-    """Background task: run the pipeline agent and update the feed record."""
-    from app.database import SessionLocal
-    from app.pipeline.llm_batching import compile_llm_filter_batches
-
-    db = SessionLocal()
+    """Background task: dispatch feed build to the worker service."""
     try:
-        feed = db.get(Feed, feed_id)
-        if feed is None:
-            return
+        logger.info("Dispatching feed build to worker feed_id=%s topic=%r", feed_id, topic)
+        await dispatch_build_feed(feed_id, topic)
+    except Exception as exc:
+        # Worker unreachable — mark feed as error immediately
+        from app.database import SessionLocal
+        db = SessionLocal()
         try:
-            logger.info("Feed build background task start feed_id=%s topic=%r", feed_id, topic)
-            result = await build_feed(topic)
-            logger.info(
-                "Feed build background task build_feed returned feed_id=%s merged_sources=%s blocks=%s",
-                feed_id,
-                len(result.get("merged_sources", []) or []),
-                len(result.get("blocks_json", []) or []),
-            )
-            blocks_json = result.get("blocks_json", [])
-            if isinstance(blocks_json, list):
-                logger.info("Feed build batch prompt compile start feed_id=%s block_count=%s", feed_id, len(blocks_json))
-                compiled_blocks = await compile_llm_filter_batches(blocks_json)
-                logger.info("Feed build batch prompt compile done feed_id=%s block_count=%s", feed_id, len(compiled_blocks))
-                result["blocks_json"] = compiled_blocks
-                final_config = result.get("final_config")
-                if isinstance(final_config, dict):
-                    final_config["blocks"] = compiled_blocks
-            feed.config_json = json.dumps(result.get("final_config", {}))
-            feed.agent_output_json = json.dumps(result)
-            feed.name = topic[:80]
-            feed.status = "ready"
-            create_pipeline_version(feed_id, feed.config_json, db, label="Initial version")
-            logger.info("Feed build background task marked ready feed_id=%s", feed_id)
-        except Exception as exc:
-            feed.status = "error"
-            feed.error_message = str(exc)
-            logger.exception("Feed build background task failed feed_id=%s topic=%r", feed_id, topic)
-        db.commit()
-    finally:
-        db.close()
+            feed = db.get(Feed, feed_id)
+            if feed:
+                feed.status = "error"
+                feed.error_message = f"Worker unreachable: {exc}"
+                db.commit()
+        finally:
+            db.close()
+        logger.exception("Failed to dispatch feed build feed_id=%s", feed_id)
 
 
 @router.post("", status_code=202)
@@ -441,117 +418,11 @@ async def replay_feed(
 
 
 async def _run_replay_task(feed_id: str, version_id: str, lookback_days: int | None) -> None:
-    """Re-evaluate all articles from current sources against the current pipeline in-memory."""
-    import json
-    from datetime import timedelta
-
-    from sqlalchemy import tuple_
-
-    from app.database import SessionLocal
-    from app.pipeline.llm_batching import run_pipeline_batch
-    from app.pipeline.schema import deserialize_pipeline
-
-    db = SessionLocal()
+    """Background task: dispatch replay job to the worker service."""
     try:
-        version = db.get(PipelineVersion, version_id)
-        if version is None:
-            return
-        config = json.loads(version.config_json)
-        active_source_keys = [
-            (s["type"], s["feed"]) for s in config.get("sources", [])
-            if s.get("type") and s.get("feed")
-        ]
-        if not active_source_keys:
-            logger.info("replay_task feed_id=%s no sources in active version, skipping", feed_id)
-            return
-
-        query = db.query(Article).filter(
-            Article.feed_id == feed_id,
-            tuple_(Article.spec_source_type, Article.spec_source_feed).in_(active_source_keys),
-        )
-        if lookback_days is not None:
-            cutoff = datetime.utcnow() - timedelta(days=lookback_days)
-            query = query.filter(Article.fetched_at >= cutoff)
-        records = query.all()
-
-        raw_articles: list[dict] = []
-        record_map: dict[str, Article] = {}
-        for r in records:
-            try:
-                a = json.loads(r.article_json)
-            except Exception:
-                continue
-            raw_articles.append(a)
-            record_map[str(a.get("id", "")).strip()] = r
-
-        if not raw_articles:
-            logger.info("replay_task feed_id=%s no matching articles found", feed_id)
-            return
-
-        logger.info("replay_task feed_id=%s re-evaluating %d articles", feed_id, len(raw_articles))
-        blocks = deserialize_pipeline(config.get("blocks", []))
-
-        # Capture pass state BEFORE updating so we can detect changes
-        old_passed: dict[str, bool] = {
-            str(json.loads(r.article_json).get("id", "")).strip(): bool(r.passed)
-            for r in records
-            if r.article_json
-        }
-
-        results = await run_pipeline_batch(raw_articles, blocks)
-
-        newly_passed: list[tuple] = []  # (record, article_payload)
-        newly_failed: list[str] = []   # record.id values
-
-        for result in results:
-            article_id = str(result["article"].get("id", "")).strip()
-            record = record_map.get(article_id)
-            if not record:
-                continue
-            was_passed = old_passed.get(article_id, False)
-            now_passed = result["passed"]
-            record.passed = now_passed
-            record.pipeline_result_json = json.dumps({
-                "passed": now_passed,
-                "block_results": result.get("block_results", []),
-                "dropped_at": result.get("dropped_at"),
-            })
-            record.pipeline_version_id = version_id
-            if not was_passed and now_passed:
-                newly_passed.append((record, result["article"]))
-            elif was_passed and not now_passed:
-                newly_failed.append(record.id)
-
-        db.commit()
-        logger.info(
-            "replay_task feed_id=%s done, updated %d articles, %d newly passed, %d newly failed",
-            feed_id, len(results), len(newly_passed), len(newly_failed),
-        )
-
-        # Sync story membership — removals first (cheap), then assignments
-        from app.database import StoryArticle
-        from app.services.stories import assign_article_to_story, remove_article_from_stories
-
-        for article_db_id in newly_failed:
-            try:
-                await remove_article_from_stories(db, article_id=article_db_id)
-            except Exception:
-                logger.warning("replay_task: story removal failed for %s", article_db_id)
-
-        for record, article_payload in newly_passed:
-            existing_link = db.query(StoryArticle).filter(StoryArticle.article_id == record.id).first()
-            if not existing_link:
-                try:
-                    await assign_article_to_story(
-                        db, feed_id=feed_id, article_record=record, article_payload=article_payload
-                    )
-                except Exception:
-                    logger.warning("replay_task: story assignment failed for %s", record.id)
+        await dispatch_replay(feed_id, version_id, lookback_days)
     except Exception:
-        logger.exception("replay_task feed_id=%s failed", feed_id)
-        db.rollback()
-    finally:
-        db.close()
+        logger.exception("Failed to dispatch replay feed_id=%s", feed_id)
 
 
 @router.post("/{feed_id}/poll", status_code=202)
@@ -574,5 +445,5 @@ async def trigger_poll(
         feed.topic,
         lookback_hours,
     )
-    background_tasks.add_task(poll_feed_by_id, feed_id, lookback_hours)
+    background_tasks.add_task(dispatch_poll, feed_id, lookback_hours)
     return {"status": "polling"}

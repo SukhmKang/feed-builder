@@ -1,33 +1,15 @@
-// ─── Pipeline types ───────────────────────────────────────────────────────────
+// ─── Pipeline types (auto-generated from Pydantic schema models) ──────────────
+// Source of truth: app/pipeline/schema_models.py
+// To regenerate: python scripts/generate_pipeline_types.py
 
+import type { PipelineBlock, PipelineCondition, SwitchBranchSchema } from "./pipeline_types.generated";
+export type { PipelineBlock, PipelineCondition };
+export type SwitchBranch = SwitchBranchSchema;
+export { PIPELINE_ARTICLE_FIELDS, PIPELINE_SOURCE_TYPE_VALUES } from "./pipeline_types.generated";
+export type { Value as SourceTypeValue } from "./pipeline_types.generated";
+
+// PipelineTier is a convenience alias kept here since it's used directly in UI code.
 export type PipelineTier = "mini" | "medium" | "high";
-
-export type PipelineCondition =
-  | { type: "and"; conditions: PipelineCondition[] }
-  | { type: "or"; conditions: PipelineCondition[] }
-  | { type: "not"; condition: PipelineCondition }
-  | { type: "source_type"; value: string }
-  | { type: "source_name"; value: string }
-  | { type: "source_url"; value: string }
-  | { type: "domain"; value: string }
-  | { type: "source_domain"; value: string }
-  | { type: "field_equals"; field: string; value: string }
-  | { type: "field_contains"; field: string; value: string }
-  | { type: "field_exists"; field: string }
-  | { type: "field_matches_regex"; field: string; pattern: string }
-  | { type: "tag_exists"; tag: string }
-  | { type: "tag_condition"; tag: string; operator: "has" | "not_has" }
-  | { type: "tag_matches"; pattern: string }
-  | { type: "keyword"; terms: string[]; operator: "any" | "all" }
-  | { type: "length"; field: string; min: number; max: number }
-  | { type: "published_after"; days_ago: number }
-  | { type: "published_before"; days_ago: number }
-  | { type: "llm"; prompt: string; tier?: PipelineTier };
-
-export interface SwitchBranch {
-  condition: PipelineCondition;
-  blocks: PipelineBlock[];
-}
 
 export interface SourceSpec {
   type: string;
@@ -39,14 +21,6 @@ export interface CustomBlockOption {
   title: string | null;
   description: string | null;
 }
-
-export type PipelineBlock =
-  | { type: "keyword_filter"; include: string[]; exclude: string[] }
-  | { type: "semantic_similarity"; query: string; field: string; threshold: number }
-  | { type: "llm_filter"; prompt: string; tier: PipelineTier }
-  | { type: "conditional"; condition: PipelineCondition; if_true: PipelineBlock[]; if_false: PipelineBlock[] }
-  | { type: "switch"; branches: SwitchBranch[]; default: PipelineBlock[] }
-  | { type: "custom_block"; name: string };
 
 export interface PipelineVersion {
   id: string;

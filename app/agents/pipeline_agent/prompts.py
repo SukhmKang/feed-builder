@@ -16,6 +16,7 @@ PIPELINE_BUILDER_TOOL_NAMES = [
     "delete_custom_block",
     "test_custom_block",
     "validate_pipeline_json",
+    "view_example_valid_pipeline",
     "list_env_vars",
     "install_package",
 ]
@@ -54,6 +55,7 @@ AUDIT_REMEDIATION_TOOL_NAMES = [
     "delete_custom_block",
     "test_custom_block",
     "validate_pipeline_json",
+    "view_example_valid_pipeline",
     "list_env_vars",
     "install_package",
 ]
@@ -64,6 +66,7 @@ BLOCK_EDIT_TOOL_NAMES = [
     "read_custom_block",
     "get_custom_block_docs",
     "validate_pipeline_json",
+    "view_example_valid_pipeline",
 ]
 
 
@@ -74,6 +77,10 @@ def build_dispatch_prompt(topic: str) -> str:
             "Valid agent names: rss, youtube, reddit, nitter, tavily.",
             "Use rss when the topic is likely covered by stable, known publishers or official feeds.",
             "Use tavily when coverage is broad across many sites, when there may not be strong native feeds, or when web/news search style discovery is likely to add recall.",
+            "If the topic is primarily news-centric, bias strongly toward rss and tavily.",
+            "For news-centric topics, avoid reddit and youtube by default unless there is a clear reason the topic is inherently community-driven, creator-driven, or breaks first on those platforms.",
+            "Use reddit when community discussion, niche enthusiast posts, or subreddit-native coverage is likely to add unique signal that standard news sources will miss.",
+            "Use youtube when creator videos, reviews, commentary, or channel-native coverage are central to the topic rather than peripheral.",
             "It is often reasonable to run both rss and tavily for broad or fast-moving topics.",
             "Bias toward running multiple agents when the topic is broad or news-like.",
             "Return JSON only with this shape:",

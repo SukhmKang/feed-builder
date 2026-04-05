@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.llm import generate_text
 from app.database import Article, Story, StoryArticle
-from app.pipeline.core import cosine_similarity, embed_text, parse_article_datetime
+from app.pipeline.core import clean_text_for_llm_prompt, cosine_similarity, embed_text, parse_article_datetime
 from app.pipeline.llm_config import resolve_tier_model
 
 logger = logging.getLogger(__name__)
@@ -24,8 +24,8 @@ STORY_MIN_SHORTLIST_SIMILARITY = 0.55
 STORY_MAX_SHORTLIST_SIZE = 4
 STORY_DECISION_TIER = "high"
 STORY_SUMMARY_TIER = "medium"
-STORY_DECISION_MAX_TOKENS = 1200
-STORY_SUMMARY_MAX_TOKENS = 800
+STORY_DECISION_MAX_TOKENS = 2400
+STORY_SUMMARY_MAX_TOKENS = 1600
 
 
 @dataclass(slots=True)
@@ -282,7 +282,6 @@ def _build_story_decision_prompt(*, article: dict[str, Any], candidates: list[St
         "published_at": article.get("published_at"),
         "content": _truncate(article.get("content"), 900),
         "full_text": _truncate(article.get("full_text"), 900),
-        "tags": article.get("tags", []),
         "url": article.get("url"),
     }
     schema = {
@@ -682,7 +681,6 @@ async def _embed_article(article: dict[str, Any]) -> list[float]:
             str(article.get("source_name", "")).strip(),
             str(article.get("content", "")).strip(),
             str(article.get("full_text", "")).strip(),
-            " ".join(str(tag) for tag in article.get("tags", []) if isinstance(tag, str)),
         ]
     )
     return await embed_text(text, model=STORY_EMBEDDING_MODEL)
@@ -728,7 +726,7 @@ def _iso(value: datetime | None) -> str | None:
 
 
 def _truncate(value: Any, limit: int) -> str:
-    text = str(value or "").strip()
+    text = clean_text_for_llm_prompt(value)
     if len(text) <= limit:
         return text
     return text[: max(limit - 3, 0)].rstrip() + "..."

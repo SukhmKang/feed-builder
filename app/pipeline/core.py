@@ -1,9 +1,9 @@
 import asyncio
 import copy
-import fnmatch
 import json
 import logging
 import math
+import re
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any, Protocol, TypedDict
@@ -26,10 +26,10 @@ Pipeline behavior:
 - `run_pipeline(article, blocks)` runs blocks in order
 - each block receives the enriched article from the previous block
 - execution stops at the first block that returns `passed=False`
-- tags and other enrichment fields accumulate on the article across blocks
 """
 
 DEFAULT_KEYWORD_FIELDS = ["title", "content"]
+URL_ONLY_LINE_RE = re.compile(r"^\s*https?://\S+\s*$", re.IGNORECASE)
 logger = logging.getLogger(__name__)
 
 
@@ -208,6 +208,37 @@ def flatten_text(value: Any) -> str:
     return str(value)
 
 
+def clean_text_for_llm_prompt(value: Any) -> str:
+    text = flatten_text(value)
+    if not text.strip():
+        return ""
+
+    cleaned_lines: list[str] = []
+    previous_blank = False
+    for raw_line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        line = raw_line.strip()
+        if URL_ONLY_LINE_RE.fullmatch(line):
+            continue
+        if not line:
+            if previous_blank:
+                continue
+            cleaned_lines.append("")
+            previous_blank = True
+            continue
+        cleaned_lines.append(line)
+        previous_blank = False
+
+    cleaned = "\n".join(cleaned_lines).strip()
+    return re.sub(r"\n{3,}", "\n\n", cleaned)
+
+
+def truncate_for_llm_prompt(value: Any, *, max_chars: int) -> str:
+    text = clean_text_for_llm_prompt(value)
+    if len(text) <= max_chars:
+        return text
+    return text[: max(max_chars - 3, 0)].rstrip() + "..."
+
+
 def normalize_for_keyword_search(text: str) -> str:
     lowered = flatten_text(text).lower()
     punctuation_as_space = "".join(char if char.isalnum() or char.isspace() else " " for char in lowered)
@@ -259,20 +290,6 @@ def copy_article(article: dict[str, Any]) -> dict[str, Any]:
     return copy.deepcopy(article)
 
 
-def ensure_tags(article: dict[str, Any]) -> list[str]:
-    tags = article.get("tags")
-    if not isinstance(tags, list):
-        tags = []
-        article["tags"] = tags
-    return tags
-
-
-def merge_tags(article: dict[str, Any], tags: list[str]) -> None:
-    existing_tags = ensure_tags(article)
-    deduped = dedupe_strings(existing_tags + [tag for tag in tags if tag and tag.strip()])
-    article["tags"] = deduped
-
-
 def dedupe_strings(values: list[str]) -> list[str]:
     seen: set[str] = set()
     deduped: list[str] = []
@@ -283,10 +300,6 @@ def dedupe_strings(values: list[str]) -> list[str]:
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
-
-
-def tag_matches_pattern(tag: str, pattern: str) -> bool:
-    return fnmatch.fnmatch(tag, pattern)
 
 
 __all__ = [
@@ -300,15 +313,12 @@ __all__ = [
     "cosine_similarity",
     "dedupe_strings",
     "embed_text",
-    "ensure_tags",
     "find_matching_terms",
     "flatten_text",
     "is_string_list",
-    "merge_tags",
     "normalize_for_embedding",
     "normalize_for_keyword_search",
     "parse_article_datetime",
     "run_pipeline",
-    "tag_matches_pattern",
     "value_exists",
 ]

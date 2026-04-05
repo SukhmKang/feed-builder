@@ -4,7 +4,7 @@ from typing import Any
 
 from claude_agent_sdk import tool
 
-from app.agents.pipeline_agent.cache import fetch_articles_cached
+from app.agents.cache import fetch_articles_cached
 from app.sources.nitter import fetch_search_feed, fetch_user_feed
 from app.sources.reddit import search_reddit_posts
 from app.sources.rss import fetch_rss_articles

@@ -16,12 +16,9 @@ from app.pipeline.conditions import (
     SourceNameCondition,
     SourceTypeCondition,
     SourceUrlCondition,
-    TagCondition,
-    TagExistsCondition,
-    TagMatchesCondition,
 )
 from app.pipeline.core import Block, BlockResult, Condition, PipelineResult, run_pipeline
-from app.pipeline.filters import Conditional, CustomBlock, KeywordFilter, LLMFilter, SemanticSimilarity, Switch
+from app.pipeline.filters import Conditional, CustomBlock, KeywordFilter, LLMFilter, RegexFilter, SemanticSimilarity, Switch
 
 __all__ = [
     "And",
@@ -43,6 +40,7 @@ __all__ = [
     "Not",
     "Or",
     "PipelineResult",
+    "RegexFilter",
     "PublishedAfterCondition",
     "PublishedBeforeCondition",
     "SemanticSimilarity",
@@ -51,8 +49,5 @@ __all__ = [
     "SourceTypeCondition",
     "SourceUrlCondition",
     "Switch",
-    "TagCondition",
-    "TagExistsCondition",
-    "TagMatchesCondition",
     "run_pipeline",
 ]

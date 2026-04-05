@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.ai.llm import generate_text
-from app.pipeline.core import BlockResult, PipelineResult, copy_article, merge_tags
+from app.pipeline.core import BlockResult, PipelineResult, copy_article
 from app.pipeline.filters import Conditional, CustomBlock, KeywordFilter, LLMFilter, SemanticSimilarity, Switch
 from app.pipeline.llm_config import VALID_LLM_TIERS, resolve_tier_model
 
@@ -290,7 +290,6 @@ async def _run_conditional_batch(block: Conditional, articles: list[dict[str, An
     false_group: list[tuple[int, dict[str, Any]]] = []
     for index, (article, passes_true) in enumerate(zip(working_articles, branch_true, strict=False)):
         branch_label = "branch:true" if passes_true else "branch:false"
-        merge_tags(article, [branch_label])
         if passes_true:
             true_group.append((index, article))
         else:
@@ -348,7 +347,6 @@ async def _run_switch_batch(block: Switch, articles: list[dict[str, Any]]) -> li
         still_remaining: list[tuple[int, dict[str, Any]]] = []
         for (original_index, article), matched_branch in zip(remaining, decisions, strict=False):
             if matched_branch:
-                merge_tags(article, [f"switch:{branch_index}"])
                 matched.append((original_index, article))
             else:
                 still_remaining.append((original_index, article))
@@ -378,8 +376,6 @@ async def _run_switch_batch(block: Switch, articles: list[dict[str, Any]]) -> li
         remaining = still_remaining
 
     if remaining:
-        for _, article in remaining:
-            merge_tags(article, ["switch:default"])
         nested_results = await run_pipeline_batch([article for _, article in remaining], block.default)
         for (original_index, _), nested_result in zip(remaining, nested_results, strict=False):
             if not block.default:

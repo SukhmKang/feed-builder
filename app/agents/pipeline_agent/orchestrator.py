@@ -13,6 +13,7 @@ Workflow:
 import asyncio
 from typing import Any
 
+from app.agents.cache import run_cache_context
 from app.ai.critic import run_critic
 
 from .evaluation import evaluate_pipeline, merge_source_agent_outputs
@@ -36,19 +37,20 @@ async def build_feed_config(
     critic_model: str = DEFAULT_CRITIC_MODEL,
     verbose: bool = True,
 ) -> PipelineAgentResult:
-    source_generation = await build_sources_for_topic(
-        topic,
-        agent_model=agent_model,
-        verbose=verbose,
-    )
-    return await build_feed_config_from_sources(
-        topic,
-        source_generation=source_generation,
-        max_iterations=max_iterations,
-        agent_model=agent_model,
-        critic_model=critic_model,
-        verbose=verbose,
-    )
+    async with run_cache_context():
+        source_generation = await build_sources_for_topic(
+            topic,
+            agent_model=agent_model,
+            verbose=verbose,
+        )
+        return await build_feed_config_from_sources(
+            topic,
+            source_generation=source_generation,
+            max_iterations=max_iterations,
+            agent_model=agent_model,
+            critic_model=critic_model,
+            verbose=verbose,
+        )
 
 
 async def build_sources_for_topic(
@@ -94,6 +96,26 @@ async def build_sources_for_topic(
 
 
 async def build_feed_config_from_sources(
+    topic: str,
+    *,
+    source_generation: SourceGenerationResult,
+    max_iterations: int = 2,
+    agent_model: str = DEFAULT_AGENT_MODEL,
+    critic_model: str = DEFAULT_CRITIC_MODEL,
+    verbose: bool = True,
+) -> PipelineAgentResult:
+    async with run_cache_context():
+        return await _build_feed_config_from_sources(
+            topic,
+            source_generation=source_generation,
+            max_iterations=max_iterations,
+            agent_model=agent_model,
+            critic_model=critic_model,
+            verbose=verbose,
+        )
+
+
+async def _build_feed_config_from_sources(
     topic: str,
     *,
     source_generation: SourceGenerationResult,

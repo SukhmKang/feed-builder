@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
 from app.routers import articles, audits, feeds, pipeline_versions, stories
-from app.scheduler import start_scheduler, stop_scheduler
 
 # Dev origins are always allowed. Add your Vercel/Netlify URL via FRONTEND_URL.
 # e.g. FRONTEND_URL=https://feed-builder.vercel.app
@@ -26,9 +25,7 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     create_tables()
     await _run_data_migration()
-    start_scheduler()
     yield
-    stop_scheduler()
 
 
 def _infer_spec_from_article(

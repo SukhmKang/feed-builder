@@ -6,18 +6,9 @@ import {
   type DropResult,
   type DraggableProvidedDragHandleProps,
 } from "@hello-pangea/dnd";
-import { Mention, MentionsInput } from "react-mentions";
 import { api } from "../api/client";
-import type { CustomBlockOption, PipelineBlock, PipelineCondition, PipelineTier, PipelineVersion, SourceSpec } from "../types";
-
-const BLOCK_TYPES: PipelineBlock["type"][] = [
-  "keyword_filter",
-  "semantic_similarity",
-  "llm_filter",
-  "conditional",
-  "switch",
-  "custom_block",
-];
+import { PIPELINE_ARTICLE_FIELDS, PIPELINE_SOURCE_TYPE_VALUES } from "../types";
+import type { CustomBlockOption, PipelineBlock, PipelineCondition, PipelineTier, PipelineVersion, SourceSpec, SourceTypeValue } from "../types";
 
 const SOURCE_TYPES = [
   "rss",
@@ -35,87 +26,21 @@ const SOURCE_TYPES = [
   "youtube_videos_by_topic",
 ] as const;
 
-const PIPELINE_SOURCE_TYPES = ["rss", "reddit", "youtube", "nitter", "google_news", "tavily"] as const;
+const PIPELINE_SOURCE_TYPES: readonly SourceTypeValue[] = PIPELINE_SOURCE_TYPE_VALUES;
 
-const FIELD_MENTIONS = [
-  { id: "title", display: "title" },
-  { id: "content", display: "content" },
-  { id: "full_text", display: "full_text" },
-  { id: "source_name", display: "source_name" },
-  { id: "source_type", display: "source_type" },
-  { id: "url", display: "url" },
-  { id: "published_at", display: "published_at" },
-  { id: "tags", display: "tags" },
-] as const;
-
-const FIELD_MENTION_NAMES = new Set<string>(FIELD_MENTIONS.map((item) => item.display));
-
-const promptInputStyle = {
-  control: {
-    backgroundColor: "#fff",
-    fontSize: 14,
-    fontFamily: "inherit",
-    fontWeight: "normal",
-  },
-  "&multiLine": {
-    control: {
-      fontFamily: "inherit",
-      minHeight: 120,
-      maxHeight: 220,
-    },
-    highlighter: {
-      padding: 9,
-      border: "1px solid transparent",
-      minHeight: 120,
-      maxHeight: 220,
-      overflow: "hidden",
-    },
-    input: {
-      padding: 9,
-      border: "1px solid silver",
-      borderRadius: 12,
-      minHeight: 120,
-      maxHeight: 220,
-      outline: 0,
-      backgroundColor: "#fff",
-      fontFamily: "inherit",
-      lineHeight: 1.55,
-      overflow: "auto",
-    },
-  },
-  suggestions: {
-    list: {
-      backgroundColor: "white",
-      border: "1px solid rgba(0,0,0,0.15)",
-      fontSize: 14,
-      overflow: "hidden",
-    },
-    item: {
-      padding: "5px 15px",
-      borderBottom: "1px solid rgba(0,0,0,0.15)",
-      "&focused": {
-        backgroundColor: "#cee4e5",
-      },
-    },
-  },
-};
-
-const promptMentionStyle = {
-  backgroundColor: "#dfe8ff",
-  color: "#3154d3",
-  borderRadius: 8,
-  padding: "1px 4px",
-  fontWeight: 600,
-};
+type ArticleField = (typeof PIPELINE_ARTICLE_FIELDS)[number];
 
 const BLOCK_META: Record<PipelineBlock["type"], { label: string; accent: string; icon: string; hint: string }> = {
   keyword_filter: { label: "Keyword Filter", accent: "#4c6fff", icon: "K", hint: "Quick include/exclude terms" },
   semantic_similarity: { label: "Semantic Similarity", accent: "#00a6b4", icon: "S", hint: "Vector match against content" },
   llm_filter: { label: "LLM Filter", accent: "#f28f3b", icon: "L", hint: "Prompted reasoning over article fields" },
+  regex_filter: { label: "Regex Filter", accent: "#be185d", icon: "R", hint: "Include or exclude by regex pattern" },
   conditional: { label: "Conditional", accent: "#2f9e72", icon: "?", hint: "Branch on a condition tree" },
   switch: { label: "Switch", accent: "#8b5cf6", icon: "⇄", hint: "Route blocks by source or metadata" },
   custom_block: { label: "Custom Block", accent: "#6b7280", icon: "C", hint: "Run a custom Python block" },
 };
+
+const BLOCK_TYPES = Object.keys(BLOCK_META) as PipelineBlock["type"][];
 
 const SOURCE_TYPE_META: Record<string, { label: string; accent: string }> = {
   rss: { label: "RSS / Atom", accent: "#4c6fff" },
@@ -146,9 +71,6 @@ const CONDITION_TYPES: PipelineCondition["type"][] = [
   "field_contains",
   "field_exists",
   "field_matches_regex",
-  "tag_exists",
-  "tag_condition",
-  "tag_matches",
   "keyword",
   "length",
   "published_after",
@@ -163,11 +85,13 @@ function defaultSource(type: SourceSpec["type"] = "rss"): SourceSpec {
 function defaultBlock(type: PipelineBlock["type"]): PipelineBlock {
   switch (type) {
     case "keyword_filter":
-      return { type, include: ["important"], exclude: [] };
+      return { type, include: [], exclude: [] };
     case "semantic_similarity":
       return { type, query: "", field: "content", threshold: 0.62 };
     case "llm_filter":
       return { type, prompt: "", tier: "mini" };
+    case "regex_filter":
+      return { type, field: "title", pattern: "", mode: "include" };
     case "conditional":
       return { type, condition: defaultCondition("source_type"), if_true: [], if_false: [] };
     case "switch":
@@ -246,6 +170,8 @@ function normalizeBlock(block: PipelineBlock): PipelineBlock {
       };
     case "llm_filter":
       return { ...block, prompt: block.prompt ?? "", tier: block.tier ?? "mini" };
+    case "regex_filter":
+      return { ...block, field: block.field ?? "title", pattern: block.pattern ?? "", mode: block.mode ?? "include" };
     case "conditional":
       return {
         ...block,
@@ -305,17 +231,11 @@ function defaultCondition(type: PipelineCondition["type"]): PipelineCondition {
       return { type, value: "" };
     case "field_equals":
     case "field_contains":
-      return { type, field: "", value: "" };
+      return { type, field: "title", value: "" };
     case "field_exists":
-      return { type, field: "" };
+      return { type, field: "title" };
     case "field_matches_regex":
-      return { type, field: "", pattern: "" };
-    case "tag_exists":
-      return { type, tag: "" };
-    case "tag_condition":
-      return { type, tag: "", operator: "has" };
-    case "tag_matches":
-      return { type, pattern: "" };
+      return { type, field: "title", pattern: "" };
     case "keyword":
       return { type, terms: [""], operator: "any" };
     case "length":
@@ -327,19 +247,6 @@ function defaultCondition(type: PipelineCondition["type"]): PipelineCondition {
     case "llm":
       return { type, prompt: "", tier: "mini" };
   }
-}
-
-function promptToMentions(value: string): string {
-  return value.replace(/\{(\w+)\}/g, (_, field) =>
-    FIELD_MENTION_NAMES.has(field) ? `@[${field}](${field})` : `{${field}}`,
-  );
-}
-
-function mentionsToPrompt(value: string): string {
-  return value.replace(/@\[([^\]]+)\]\(([^)]+)\)/g, (_, display, id) => {
-    const field = String(display || id);
-    return FIELD_MENTION_NAMES.has(field) ? `{${field}}` : `@[${display}](${id})`;
-  });
 }
 
 function reorder<T>(items: T[], startIndex: number, endIndex: number): T[] {
@@ -391,47 +298,26 @@ function PromptEditor({
   onChange: (value: string) => void;
   minHeight?: number;
 }) {
-  const mentionsValue = promptToMentions(value);
-
   return (
-    <div style={{ display: "grid", gap: 8 }}>
-      <MentionsInput
-        value={mentionsValue}
-        onChange={(_, nextValue) => onChange(mentionsToPrompt(nextValue))}
-        placeholder="Write the prompt and press / to insert a field like {title} or {content}"
-        style={{
-          ...promptInputStyle,
-          "&multiLine": {
-            ...promptInputStyle["&multiLine"],
-            control: {
-              ...promptInputStyle["&multiLine"].control,
-              minHeight,
-              maxHeight: 220,
-            },
-            input: {
-              ...promptInputStyle["&multiLine"].input,
-              minHeight,
-              maxHeight: 220,
-            },
-            highlighter: {
-              ...promptInputStyle["&multiLine"].highlighter,
-              minHeight,
-              maxHeight: 220,
-            },
-          },
-        }}
-        a11ySuggestionsListLabel="Prompt field suggestions"
-      >
-        <Mention
-          trigger="/"
-          data={[...FIELD_MENTIONS]}
-          markup="@[__display__](__id__)"
-          appendSpaceOnAdd
-          displayTransform={(_, display) => `{${display}}`}
-          style={promptMentionStyle}
-        />
-      </MentionsInput>
-    </div>
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder="Write your filter criteria. The article title, source, and content will be included automatically."
+      style={{
+        width: "100%",
+        minHeight,
+        maxHeight: 220,
+        padding: 9,
+        border: "1px solid silver",
+        borderRadius: 12,
+        fontSize: 14,
+        fontFamily: "inherit",
+        lineHeight: 1.55,
+        resize: "vertical",
+        outline: 0,
+        boxSizing: "border-box",
+      }}
+    />
   );
 }
 
@@ -483,6 +369,24 @@ function TierPicker({ value, onChange }: { value: PipelineTier; onChange: (tier:
         </button>
       ))}
     </div>
+  );
+}
+
+function FieldSelect({
+  value,
+  onChange,
+}: {
+  value: ArticleField;
+  onChange: (field: ArticleField) => void;
+}) {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value as ArticleField)}>
+      {PIPELINE_ARTICLE_FIELDS.map((field) => (
+        <option key={field} value={field}>
+          {field}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -687,7 +591,7 @@ function ConditionEditor({
         return (
           <label style={fieldStack}>
             <span style={fieldLabel}>Source type</span>
-            <select value={condition.value} onChange={(event) => onChange({ type: "source_type", value: event.target.value })}>
+            <select value={condition.value} onChange={(event) => onChange({ type: "source_type", value: event.target.value as SourceTypeValue })}>
               {PIPELINE_SOURCE_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {type}
@@ -712,9 +616,9 @@ function ConditionEditor({
           <div style={fieldGrid}>
             <label style={fieldStack}>
               <span style={fieldLabel}>Field</span>
-              <input
+              <FieldSelect
                 value={condition.field}
-                onChange={(event) => onChange({ type: condition.type, field: event.target.value, value: condition.value } as PipelineCondition)}
+                onChange={(field) => onChange({ type: condition.type, field, value: condition.value } as PipelineCondition)}
               />
             </label>
             <label style={fieldStack}>
@@ -730,7 +634,7 @@ function ConditionEditor({
         return (
           <label style={fieldStack}>
             <span style={fieldLabel}>Field</span>
-            <input value={condition.field} onChange={(event) => onChange({ type: "field_exists", field: event.target.value })} />
+            <FieldSelect value={condition.field} onChange={(field) => onChange({ type: "field_exists", field })} />
           </label>
         );
       case "field_matches_regex":
@@ -738,9 +642,9 @@ function ConditionEditor({
           <div style={fieldGrid}>
             <label style={fieldStack}>
               <span style={fieldLabel}>Field</span>
-              <input
+              <FieldSelect
                 value={condition.field}
-                onChange={(event) => onChange({ type: "field_matches_regex", field: event.target.value, pattern: condition.pattern })}
+                onChange={(field) => onChange({ type: "field_matches_regex", field, pattern: condition.pattern })}
               />
             </label>
             <label style={fieldStack}>
@@ -751,39 +655,6 @@ function ConditionEditor({
               />
             </label>
           </div>
-        );
-      case "tag_exists":
-        return (
-          <label style={fieldStack}>
-            <span style={fieldLabel}>Tag</span>
-            <input value={condition.tag} onChange={(event) => onChange({ type: "tag_exists", tag: event.target.value })} />
-          </label>
-        );
-      case "tag_condition":
-        return (
-          <div style={fieldGrid}>
-            <label style={fieldStack}>
-              <span style={fieldLabel}>Tag</span>
-              <input value={condition.tag} onChange={(event) => onChange({ type: "tag_condition", tag: event.target.value, operator: condition.operator })} />
-            </label>
-            <label style={fieldStack}>
-              <span style={fieldLabel}>Operator</span>
-              <select
-                value={condition.operator}
-                onChange={(event) => onChange({ type: "tag_condition", tag: condition.tag, operator: event.target.value as "has" | "not_has" })}
-              >
-                <option value="has">has</option>
-                <option value="not_has">not_has</option>
-              </select>
-            </label>
-          </div>
-        );
-      case "tag_matches":
-        return (
-          <label style={fieldStack}>
-            <span style={fieldLabel}>Pattern</span>
-            <input value={condition.pattern} onChange={(event) => onChange({ type: "tag_matches", pattern: event.target.value })} />
-          </label>
         );
       case "keyword":
         return (
@@ -806,7 +677,7 @@ function ConditionEditor({
           <div style={fieldGrid}>
             <label style={fieldStack}>
               <span style={fieldLabel}>Field</span>
-              <input value={condition.field} onChange={(event) => onChange({ type: "length", field: event.target.value, min: condition.min, max: condition.max })} />
+              <FieldSelect value={condition.field} onChange={(field) => onChange({ type: "length", field, min: condition.min, max: condition.max })} />
             </label>
             <label style={fieldStack}>
               <span style={fieldLabel}>Range</span>
@@ -890,11 +761,11 @@ function BlockEditor({
           <div style={editorGrid}>
             <label style={fieldStack}>
               <span style={fieldLabel}>Include</span>
-              <TagListEditor values={block.include} onChange={(include) => onChange({ ...block, include })} placeholder="keyword" />
+              <TagListEditor values={block.include ?? []} onChange={(include) => onChange({ ...block, include })} placeholder="keyword" />
             </label>
             <label style={fieldStack}>
               <span style={fieldLabel}>Exclude</span>
-              <TagListEditor values={block.exclude} onChange={(exclude) => onChange({ ...block, exclude })} placeholder="keyword" />
+              <TagListEditor values={block.exclude ?? []} onChange={(exclude) => onChange({ ...block, exclude })} placeholder="keyword" />
             </label>
           </div>
         );
@@ -908,7 +779,7 @@ function BlockEditor({
             <div style={fieldGrid}>
               <label style={fieldStack}>
                 <span style={fieldLabel}>Field</span>
-                <input value={block.field} onChange={(event) => onChange({ ...block, field: event.target.value })} />
+                <FieldSelect value={block.field} onChange={(field) => onChange({ ...block, field })} />
               </label>
               <label style={fieldStack}>
                 <span style={fieldLabel}>Threshold</span>
@@ -924,6 +795,28 @@ function BlockEditor({
             <TierPicker value={block.tier ?? "mini"} onChange={(tier) => onChange({ ...block, tier })} />
           </div>
         );
+      case "regex_filter":
+        return (
+          <div style={editorGrid}>
+            <div style={fieldGrid}>
+              <label style={fieldStack}>
+                <span style={fieldLabel}>Field</span>
+                <FieldSelect value={block.field} onChange={(field) => onChange({ ...block, field })} />
+              </label>
+              <label style={fieldStack}>
+                <span style={fieldLabel}>Mode</span>
+                <select value={block.mode ?? "include"} onChange={(event) => onChange({ ...block, mode: event.target.value as "include" | "exclude" })}>
+                  <option value="include">Include (must match)</option>
+                  <option value="exclude">Exclude (must not match)</option>
+                </select>
+              </label>
+            </div>
+            <label style={fieldStack}>
+              <span style={fieldLabel}>Pattern</span>
+              <input value={block.pattern} onChange={(event) => onChange({ ...block, pattern: event.target.value })} placeholder="(?i)review|analysis" />
+            </label>
+          </div>
+        );
       case "conditional":
         return (
           <div style={editorGrid}>
@@ -934,7 +827,7 @@ function BlockEditor({
                 <div style={subsectionTitle}>If true</div>
                 <div style={conditionalIndented}>
                   <BlockListEditor
-                    blocks={block.if_true}
+                    blocks={block.if_true ?? []}
                     onChange={(if_true) => onChange({ ...block, if_true })}
                     nested
                     customBlockOptions={customBlockOptions}
@@ -948,7 +841,7 @@ function BlockEditor({
                 <div style={subsectionTitle}>If false</div>
                 <div style={conditionalIndented}>
                   <BlockListEditor
-                    blocks={block.if_false}
+                    blocks={block.if_false ?? []}
                     onChange={(if_false) => onChange({ ...block, if_false })}
                     nested
                     customBlockOptions={customBlockOptions}
@@ -984,7 +877,7 @@ function BlockEditor({
                     }
                   />
                   <BlockListEditor
-                    blocks={branch.blocks}
+                    blocks={branch.blocks ?? []}
                     onChange={(blocks) =>
                       onChange({
                         ...block,
@@ -1009,7 +902,7 @@ function BlockEditor({
             </button>
             <div style={subsectionTitle}>Default</div>
             <BlockListEditor
-              blocks={block.default}
+              blocks={block.default ?? []}
               onChange={(defaultBlocks) => onChange({ ...block, default: defaultBlocks })}
               nested
               customBlockOptions={customBlockOptions}

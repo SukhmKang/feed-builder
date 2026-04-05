@@ -197,7 +197,6 @@ def _summarize_article(article: dict[str, Any]) -> dict[str, Any]:
         "url": str(article.get("url", "")).strip(),
         "source_name": str(article.get("source_name", "")).strip(),
         "source_type": str(article.get("source_type", "")).strip(),
-        "tags": list(article.get("tags", [])) if isinstance(article.get("tags"), list) else [],
         "similarity_score": article.get("similarity_score"),
         "content": _truncate_text(str(article.get("content", "")).strip(), CRITIC_CONTENT_LIMIT),
     }

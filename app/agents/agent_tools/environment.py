@@ -1,6 +1,7 @@
 """Utility Claude Agent SDK tools for environment inspection and venv package installs."""
 
 import asyncio
+import json
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,95 @@ from app.pipeline.schema import deserialize_pipeline
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DOTENV_PATH = PROJECT_ROOT / ".env"
 VENV_PIP = PROJECT_ROOT / "venv" / "bin" / "pip"
+
+EXAMPLE_VALID_PIPELINE_BLOCKS: list[dict[str, Any]] = [
+    {
+        "type": "custom_block",
+        "name": "drop_non_english",
+    },
+    {
+        "type": "keyword_filter",
+        "include": ["steam deck", "handheld pc"],
+        "exclude": ["giveaway", "sponsored"],
+    },
+    {
+        "type": "semantic_similarity",
+        "query": "news and analysis about handheld gaming PCs and portable PC hardware",
+        "field": "content",
+        "threshold": 0.6,
+    },
+    {
+        "type": "conditional",
+        "condition": {
+            "type": "and",
+            "conditions": [
+                {"type": "source_type", "value": "rss"},
+                {"type": "field_contains", "field": "title", "value": "steam deck"},
+            ],
+        },
+        "if_true": [
+            {
+                "type": "llm_filter",
+                "prompt": (
+                    "Pass only if the article is primarily about handheld gaming PCs, "
+                    "portable PC gaming hardware, or closely related accessories and updates. "
+                    "Reject articles that are mainly about general console news, broad gaming news, "
+                    "or unrelated PC hardware. "
+                    "Use the title, content, and source together when deciding whether the article's "
+                    "main subject is handheld PC hardware rather than a passing mention. "
+                ),
+                "tier": "mini",
+            }
+        ],
+        "if_false": [],
+    },
+    {
+        "type": "switch",
+        "branches": [
+            {
+                "condition": {"type": "source_type", "value": "reddit"},
+                "blocks": [
+                    {
+                        "type": "llm_filter",
+                        "prompt": (
+                            "Pass only if this Reddit post is specifically about handheld PC "
+                            "gaming hardware, device availability, accessories, software updates, "
+                            "or performance discussion that is clearly centered on handheld PCs. "
+                            "Reject general gaming chatter, memes, giveaways, off-topic troubleshooting, "
+                            "or posts where handheld hardware is only mentioned in passing. "
+                            "Use the title, content, source, and tags together to decide whether the "
+                            "post is truly centered on handheld PC hardware."
+                        ),
+                        "tier": "mini",
+                    }
+                ],
+            },
+            {
+                "condition": {"type": "source_type", "value": "google_news"},
+                "blocks": [
+                    {
+                        "type": "llm_filter",
+                        "prompt": (
+                            "Pass only if this article is primarily about handheld gaming PCs, "
+                            "portable PC gaming hardware, major device updates, accessory launches, "
+                            "or substantive reporting about that category. "
+                            "Reject general gaming news, console-focused coverage, broad PC hardware coverage "
+                            "that is not centered on handheld PCs, and articles where handheld gaming PCs are "
+                            "only a minor mention. "
+                            "Use the article title, content, and source together when deciding."
+                        ),
+                        "tier": "mini",
+                    }
+                ],
+            },
+        ],
+        "default": [],
+    },
+    {
+        "type": "custom_block",
+        "name": "drop_short_content",
+    },
+]
 
 
 def _read_dotenv_keys() -> list[str]:
@@ -167,8 +257,33 @@ async def validate_pipeline_json_tool(args: dict[str, Any]) -> dict[str, Any]:
     return success({"valid": True, "error": None})
 
 
+@tool(
+    "view_example_valid_pipeline",
+    "Return a valid example pipeline JSON string aligned with the current pipeline schema.",
+    {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {},
+    },
+)
+async def view_example_valid_pipeline_tool(args: dict[str, Any]) -> dict[str, Any]:
+    del args
+
+    try:
+        deserialize_pipeline(EXAMPLE_VALID_PIPELINE_BLOCKS)
+    except Exception as exc:
+        return error(f"view_example_valid_pipeline failed: bundled example is invalid: {exc}")
+
+    return success(
+        {
+            "example_pipeline_json": json.dumps(EXAMPLE_VALID_PIPELINE_BLOCKS, indent=2, ensure_ascii=True),
+        }
+    )
+
+
 UTILITY_TOOLS = [
     list_env_vars_tool,
     install_package_tool,
     validate_pipeline_json_tool,
+    view_example_valid_pipeline_tool,
 ]

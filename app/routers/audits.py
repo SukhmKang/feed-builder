@@ -220,18 +220,19 @@ async def _run_audit_task(
     enable_replay: bool,
     enable_discovery: bool,
 ) -> None:
-    from app.agents.audit_agent.orchestrator import run_and_persist_audit
+    """Background task: dispatch audit job to the worker service."""
+    from app.worker.client import dispatch_audit
+
     try:
-        audit_id = await run_and_persist_audit(
-            feed_id,
+        await dispatch_audit(
+            feed_id=feed_id,
             start=start,
             end=end,
             enable_replay=enable_replay,
             enable_discovery=enable_discovery,
         )
-        logger.info("audit_task.complete audit_id=%s feed_id=%s", audit_id, feed_id)
     except Exception:
-        logger.exception("audit_task.failed feed_id=%s", feed_id)
+        logger.exception("Failed to dispatch audit feed_id=%s", feed_id)
 
 
 def _summarize_record(record: AuditResult, db=None) -> dict[str, Any]:

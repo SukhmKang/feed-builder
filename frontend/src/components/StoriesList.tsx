@@ -90,11 +90,15 @@ interface StoryCardProps {
   detail: StoryDetail | null;
   isLoadingDetail: boolean;
   onToggle: () => void;
+  onRename: (title: string) => Promise<void>;
 }
 
-function StoryCard({ story, detail, isLoadingDetail, onToggle }: StoryCardProps) {
+function StoryCard({ story, detail, isLoadingDetail, onToggle, onRename }: StoryCardProps) {
   const rep = story.representative_article;
   const isExpanded = !!detail;
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(story.title);
+  const [savingTitle, setSavingTitle] = useState(false);
 
   const relatedArticles = detail
     ? detail.articles.filter((a) => a.id !== rep?.id)
@@ -102,17 +106,84 @@ function StoryCard({ story, detail, isLoadingDetail, onToggle }: StoryCardProps)
 
   const [footerHover, setFooterHover] = useState(false);
 
+  useEffect(() => {
+    setDraftTitle(story.title);
+  }, [story.title]);
+
+  async function saveTitle() {
+    const normalized = draftTitle.trim();
+    if (!normalized || normalized === story.title || savingTitle) {
+      if (normalized === story.title) setEditingTitle(false);
+      return;
+    }
+    setSavingTitle(true);
+    try {
+      await onRename(normalized);
+      setEditingTitle(false);
+    } finally {
+      setSavingTitle(false);
+    }
+  }
+
   return (
     <article style={S.card}>
       {/* Header: story title */}
       <div style={S.cardHeader}>
-        {rep ? (
-          <a href={rep.url} target="_blank" rel="noreferrer" style={S.storyTitleLink}>
-            {story.title}
-            <span style={S.arrow}> ›</span>
-          </a>
+        {editingTitle ? (
+          <div style={S.titleEditor}>
+            <input
+              value={draftTitle}
+              onChange={(event) => setDraftTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void saveTitle();
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setDraftTitle(story.title);
+                  setEditingTitle(false);
+                }
+              }}
+              autoFocus
+              maxLength={160}
+              style={S.titleInput}
+            />
+            <div style={S.titleEditorActions}>
+              <button type="button" style={S.titleActionPrimary} onClick={() => void saveTitle()} disabled={savingTitle}>
+                {savingTitle ? "…" : "Save"}
+              </button>
+              <button
+                type="button"
+                style={S.titleActionSecondary}
+                onClick={() => {
+                  setDraftTitle(story.title);
+                  setEditingTitle(false);
+                }}
+                disabled={savingTitle}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         ) : (
-          <span style={S.storyTitlePlain}>{story.title}</span>
+          <div style={S.titleRow}>
+            {rep ? (
+              <a href={rep.url} target="_blank" rel="noreferrer" style={S.storyTitleLink}>
+                {story.title}
+                <span style={S.arrow}> ›</span>
+              </a>
+            ) : (
+              <span style={S.storyTitlePlain}>{story.title}</span>
+            )}
+            <button
+              type="button"
+              style={S.editTitleButton}
+              onClick={() => setEditingTitle(true)}
+            >
+              Edit
+            </button>
+          </div>
         )}
         <span style={S.headerTime}>
           {timeAgo(story.last_published_at ?? story.updated_at ?? null)}
@@ -346,6 +417,21 @@ export function StoriesList({ feed }: Props) {
     }
   }
 
+  async function renameStory(storyId: string, title: string) {
+    try {
+      const updated = await api.stories.update(feed.id, storyId, { title });
+      setStories((prev) => prev.map((story) => (story.id === storyId ? { ...story, title: updated.title } : story)));
+      setExpanded((prev) => {
+        const current = prev[storyId];
+        if (!current) return prev;
+        return { ...prev, [storyId]: { ...current, title: updated.title } };
+      });
+    } catch (err) {
+      alert(`Failed to rename story: ${err instanceof Error ? err.message : err}`);
+      throw err;
+    }
+  }
+
   if (loading) {
     return (
       <div style={S.center}>
@@ -381,6 +467,7 @@ export function StoriesList({ feed }: Props) {
             detail={expanded[story.id] ?? null}
             isLoadingDetail={loadingId === story.id}
             onToggle={() => void toggleStory(story)}
+            onRename={(title) => renameStory(story.id, title)}
           />
         ))}
       </div>
@@ -444,6 +531,44 @@ const S: Record<string, React.CSSProperties> = {
     justifyContent: "space-between",
     gap: 12,
   },
+  titleRow: {
+    display: "flex",
+    alignItems: "flex-start",
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  titleEditor: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+    flex: 1,
+    minWidth: 0,
+  },
+  titleInput: {
+    fontSize: 16,
+    lineHeight: 1.35,
+    padding: "8px 10px",
+    border: "1px solid #DADCE0",
+    borderRadius: 8,
+    width: "100%",
+  },
+  titleEditorActions: {
+    display: "flex",
+    gap: 8,
+  },
+  titleActionPrimary: {
+    fontSize: 12,
+    padding: "5px 10px",
+    background: "#1558D6",
+    color: "#fff",
+  },
+  titleActionSecondary: {
+    fontSize: 12,
+    padding: "5px 10px",
+    background: "transparent",
+    color: "#5F6368",
+  },
   storyTitleLink: {
     fontSize: 18,
     fontWeight: 400,
@@ -460,6 +585,16 @@ const S: Record<string, React.CSSProperties> = {
     color: "#202124",
     lineHeight: 1.35,
     letterSpacing: "-0.01em",
+    flex: 1,
+    minWidth: 0,
+  },
+  editTitleButton: {
+    fontSize: 11,
+    padding: "2px 8px",
+    background: "#EEF4FF",
+    color: "#1558D6",
+    borderRadius: 999,
+    flexShrink: 0,
   },
   arrow: {
     fontSize: 19,
