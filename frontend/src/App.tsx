@@ -12,7 +12,7 @@ import type { Feed, PipelineBlock, SourceSpec } from "./types";
 export default function App() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline" | "audits">("articles");
+  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline" | "audits">("stories");
   const [showCreate, setShowCreate] = useState(false);
   const [loadingFeeds, setLoadingFeeds] = useState(true);
   const [copyingRss, setCopyingRss] = useState(false);
