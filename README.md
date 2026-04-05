@@ -1,6 +1,6 @@
 # Feed Builder
 
-A personal news feed aggregator with an AI-powered filtering pipeline. You define what topics matter to you, connect sources, and the pipeline filters incoming articles down to only the ones worth reading.
+A personal news feed aggregator powered by AI. You define what topics matter to you — the AI builds your sources, filtering pipeline, and keeps it tuned over time.
 
 ## What it does
 
