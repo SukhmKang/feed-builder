@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
+import { DEMO_MODE } from "../demoMode";
 import type { Feed } from "../types";
 
 interface Props {
@@ -15,7 +16,7 @@ export function CreateFeedModal({ onCreated, onClose }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!topic.trim()) return;
+    if (DEMO_MODE || !topic.trim()) return;
     setPhase("building");
     setError(null);
 
@@ -88,7 +89,7 @@ export function CreateFeedModal({ onCreated, onClose }: Props) {
               <button type="button" onClick={onClose} style={styles.cancelBtn}>
                 Cancel
               </button>
-              <button type="submit" disabled={!topic.trim()} style={styles.submitBtn}>
+              <button type="submit" disabled={DEMO_MODE || !topic.trim()} style={styles.submitBtn}>
                 Build Feed
               </button>
             </div>

@@ -7,6 +7,7 @@ import {
   type DraggableProvidedDragHandleProps,
 } from "@hello-pangea/dnd";
 import { api } from "../api/client";
+import { DEMO_MODE } from "../demoMode";
 import { PIPELINE_ARTICLE_FIELDS, PIPELINE_SOURCE_TYPE_VALUES } from "../types";
 import type { CustomBlockOption, PipelineBlock, PipelineCondition, PipelineTier, PipelineVersion, SourceSpec, SourceTypeValue } from "../types";
 
@@ -446,6 +447,7 @@ function SourceGroupsEditor({
               }
             }}
             style={addSourceSelect}
+            disabled={DEMO_MODE}
           >
             <option value="">+ add source</option>
             {SOURCE_TYPES.map((type) => (
@@ -466,6 +468,7 @@ function SourceGroupsEditor({
               }
             }}
             style={addSourceSelect}
+            disabled={DEMO_MODE}
           >
             <option value="">+ add source</option>
             {SOURCE_TYPES.map((type) => (
@@ -488,7 +491,7 @@ function SourceGroupsEditor({
                   <div style={{ ...sourceGroupBadge, color: meta.accent, background: `${meta.accent}14` }}>{meta.label}</div>
                   <div style={sourceCount}>{members.length} source{members.length === 1 ? "" : "s"}</div>
                 </div>
-                <button type="button" style={ghostAction} onClick={() => addSource(type)}>
+                <button type="button" style={ghostAction} onClick={() => addSource(type)} disabled={DEMO_MODE}>
                   + add
                 </button>
               </div>
@@ -508,6 +511,7 @@ function SourceGroupsEditor({
                           <select
                             value={source.type}
                             onChange={(event) => updateSource(index, { ...source, type: event.target.value })}
+                            disabled={DEMO_MODE}
                           >
                             {SOURCE_TYPES.map((option) => (
                               <option key={option} value={option}>
@@ -522,9 +526,10 @@ function SourceGroupsEditor({
                             value={source.feed}
                             onChange={(event) => updateSource(index, { ...source, feed: event.target.value })}
                             placeholder="https://example.com/feed or search query"
+                            disabled={DEMO_MODE}
                           />
                         </label>
-                        <button type="button" style={iconGhost} onClick={() => deleteSource(index)}>
+                        <button type="button" style={iconGhost} onClick={() => deleteSource(index)} disabled={DEMO_MODE}>
                           ×
                         </button>
                       </div>
@@ -963,7 +968,7 @@ function BlockEditor({
         <div style={{ ...blockIcon, background: `${meta.accent}15`, color: meta.accent }}>{meta.icon}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={blockHeaderTop}>
-            <select value={block.type} onChange={(event) => onChange(defaultBlock(event.target.value as PipelineBlock["type"]))} style={blockTypeSelect}>
+            <select value={block.type} onChange={(event) => onChange(defaultBlock(event.target.value as PipelineBlock["type"]))} style={blockTypeSelect} disabled={DEMO_MODE}>
               {BLOCK_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {BLOCK_META[type].label}
@@ -977,10 +982,10 @@ function BlockEditor({
         <button type="button" style={iconGhost} onClick={() => setCollapsed((current) => !current)}>
           {collapsed ? "+" : "–"}
         </button>
-        <button type="button" style={aiGhost} onClick={() => setAiOpen((current) => !current)}>
+        <button type="button" style={aiGhost} onClick={() => setAiOpen((current) => !current)} disabled={DEMO_MODE}>
           AI edit
         </button>
-        <button type="button" style={{ ...iconGhost, color: "#dc2626" }} onClick={onDelete}>
+        <button type="button" style={{ ...iconGhost, color: "#dc2626" }} onClick={onDelete} disabled={DEMO_MODE}>
           ×
         </button>
       </div>
@@ -1003,7 +1008,7 @@ function BlockEditor({
                   type="button"
                   style={toolbarPrimaryButton}
                   onClick={() => void handleAiEditSubmit()}
-                  disabled={!aiInstruction.trim() || aiWorking}
+                  disabled={DEMO_MODE || !aiInstruction.trim() || aiWorking}
                 >
                   {aiWorking ? "Applying..." : "Apply"}
                 </button>
@@ -1020,7 +1025,7 @@ function AddBlockRow({ onAdd }: { onAdd: (type: PipelineBlock["type"]) => void }
   return (
     <div style={addBlockStrip}>
       {BLOCK_TYPES.map((type) => (
-        <button key={type} type="button" style={addBlockChoice} onClick={() => onAdd(type)}>
+        <button key={type} type="button" style={addBlockChoice} onClick={() => onAdd(type)} disabled={DEMO_MODE}>
           <span style={{ ...addBlockIcon, color: BLOCK_META[type].accent }}>{BLOCK_META[type].icon}</span>
           {BLOCK_META[type].label}
         </button>
@@ -1049,6 +1054,7 @@ function BlockListEditor({
   const droppableId = useRef(`droppable-${Math.random().toString(36).slice(2)}`).current;
 
   function handleDragEnd(result: DropResult) {
+    if (DEMO_MODE) return;
     if (!result.destination) return;
     onChange(reorder(blocks, result.source.index, result.destination.index));
   }
@@ -1264,12 +1270,12 @@ export function PipelineEditor({ feedId, sources: initialSources, pipeline: init
               width: 220,
               opacity: dirty ? 1 : 0.45,
             }}
-            disabled={!dirty || saving}
+            disabled={DEMO_MODE || !dirty || saving}
           />
-          <button type="button" style={toolbarSecondaryButton} onClick={resetAll} disabled={!dirty || saving}>
+          <button type="button" style={toolbarSecondaryButton} onClick={resetAll} disabled={DEMO_MODE || !dirty || saving}>
             Reset
           </button>
-          <button type="button" style={toolbarPrimaryButton} onClick={handleSave} disabled={!dirty || saving}>
+          <button type="button" style={toolbarPrimaryButton} onClick={handleSave} disabled={DEMO_MODE || !dirty || saving}>
             {saving ? "Saving..." : saved ? "Saved" : "Save"}
           </button>
         </div>
@@ -1288,7 +1294,7 @@ export function PipelineEditor({ feedId, sources: initialSources, pipeline: init
               {sourcesCollapsed ? "Expand" : "Collapse"}
             </button>
           </div>
-          {!sourcesCollapsed ? <SourceGroupsEditor sources={sources} onChange={setSources} embedded /> : null}
+          {!sourcesCollapsed ? <SourceGroupsEditor sources={sources} onChange={DEMO_MODE ? () => {} : setSources} embedded /> : null}
         </section>
 
         <section style={sectionShell}>
@@ -1304,7 +1310,7 @@ export function PipelineEditor({ feedId, sources: initialSources, pipeline: init
           {!pipelineCollapsed ? (
             <BlockListEditor
               blocks={pipeline}
-              onChange={setPipeline}
+              onChange={DEMO_MODE ? () => {} : setPipeline}
               customBlockOptions={customBlockOptions}
               onAiEdit={handleBlockAiEdit}
               containerPath="pipeline"
@@ -1380,7 +1386,7 @@ export function PipelineEditor({ feedId, sources: initialSources, pipeline: init
                       {!v.is_active ? (
                         <button
                           type="button"
-                          disabled={reverting === v.id}
+                          disabled={DEMO_MODE || reverting === v.id}
                           onClick={() => handleRevert(v)}
                           style={{
                             fontSize: 12,

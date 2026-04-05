@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactDiffViewer, { DiffMethod } from "react-diff-viewer-continued";
 import ReactMarkdown from "react-markdown";
 import { api } from "../api/client";
+import { DEMO_MODE } from "../demoMode";
 import type { ApplyAuditResult, AuditDetail, AuditSummary, Feed, PipelineBlock, SourceSpec } from "../types";
 
 interface Props {
@@ -131,6 +132,7 @@ function RunAuditModal({ feedId, onClose, onTriggered }: RunModalProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (DEMO_MODE) return;
     setLoading(true);
     setError(null);
     try {
@@ -196,7 +198,7 @@ function RunAuditModal({ feedId, onClose, onTriggered }: RunModalProps) {
           {error && <p style={{ color: "#ff3b30", fontSize: 12, margin: "8px 0" }}>{error}</p>}
           <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
             <button type="button" onClick={onClose} style={modalStyles.cancelBtn}>Cancel</button>
-            <button type="submit" disabled={loading} style={modalStyles.submitBtn}>
+            <button type="submit" disabled={DEMO_MODE || loading} style={modalStyles.submitBtn}>
               {loading ? "Starting…" : "Run Audit"}
             </button>
           </div>
@@ -236,6 +238,7 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
   const [showRunModal, setShowRunModal] = useState(false);
   const [applySuccess, setApplySuccess] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [diffBase, setDiffBase] = useState<"current" | "audited">("current");
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pendingAuditIdRef = useRef<string | null>(null);
 
@@ -246,6 +249,7 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
     setDetail(null);
     setDiffResult(null);
     setApplySuccess(false);
+    setDiffBase("current");
     setLoadingDetail(true);
     let d: AuditDetail | null = null;
     try {
@@ -367,9 +371,15 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
     }
   }
 
-  const currentBlocks = (feed.config?.blocks ?? []) as PipelineBlock[];
+  const auditedConfig = detail?.report?.current_config_snapshot;
+  const baseBlocks = (
+    (diffBase === "audited" && auditedConfig ? auditedConfig.blocks : feed.config?.blocks) ?? []
+  ) as PipelineBlock[];
+  const baseLabel = diffBase === "audited" ? `v${detail?.pipeline_version_number ?? "?"}` : "Current";
   const proposedBlocks = (diffResult?.proposed_config?.blocks ?? []) as PipelineBlock[];
-  const currentSources = (feed.config?.sources ?? []) as SourceSpec[];
+  const baseSources = (
+    (diffBase === "audited" && auditedConfig ? auditedConfig.sources : feed.config?.sources) ?? []
+  ) as SourceSpec[];
   const proposedSources = (diffResult?.proposed_config?.sources ?? []) as SourceSpec[];
 
   return (
@@ -378,7 +388,7 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
       <div style={styles.listPanel}>
         <div style={styles.listHeader}>
           <span style={{ fontSize: 13, fontWeight: 600 }}>Audit History</span>
-          <button style={styles.runBtn} onClick={() => setShowRunModal(true)}>
+          <button style={styles.runBtn} onClick={() => setShowRunModal(true)} disabled={DEMO_MODE}>
             + Run Audit
           </button>
         </div>
@@ -411,7 +421,7 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
                     <StatusBadge status={a.status} />
                     <button
                       onClick={(e) => handleDelete(a.id, e)}
-                      disabled={deletingId === a.id}
+                      disabled={DEMO_MODE || deletingId === a.id}
                       title="Delete audit"
                       style={styles.deleteBtn}
                     >
@@ -642,7 +652,7 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
                       </p>
                       <button
                         onClick={() => handleGenerateDiff(false)}
-                        disabled={generatingDiff}
+                        disabled={DEMO_MODE || generatingDiff}
                         style={styles.generateBtn}
                       >
                         {generatingDiff ? "Generating…" : "Generate Proposed Pipeline"}
@@ -650,18 +660,33 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
                     </div>
                   ) : (
                     <div>
-                      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button
+                            onClick={() => setDiffBase("current")}
+                            style={{ ...styles.diffToggleBtn, ...(diffBase === "current" ? styles.diffToggleActive : {}) }}
+                          >
+                            vs. current pipeline
+                          </button>
+                          <button
+                            onClick={() => setDiffBase("audited")}
+                            disabled={!auditedConfig}
+                            style={{ ...styles.diffToggleBtn, ...(diffBase === "audited" ? styles.diffToggleActive : {}) }}
+                          >
+                            vs. audited pipeline{detail?.pipeline_version_number != null ? ` (v${detail.pipeline_version_number})` : ""}
+                          </button>
+                        </div>
                         <button
                           onClick={() => handleGenerateDiff(true)}
-                          disabled={generatingDiff}
+                          disabled={DEMO_MODE || generatingDiff}
                           style={{ ...styles.generateBtn, padding: "5px 12px", fontSize: 12 }}
                         >
                           {generatingDiff ? "Regenerating…" : "Regenerate"}
                         </button>
                       </div>
 
-                      <SourceDiffView currentSources={currentSources} proposedSources={proposedSources} />
-                      <BlocksJSONDiffView currentBlocks={currentBlocks} proposedBlocks={proposedBlocks} />
+                      <SourceDiffView currentSources={baseSources} proposedSources={proposedSources} baseLabel={baseLabel} />
+                      <BlocksJSONDiffView currentBlocks={baseBlocks} proposedBlocks={proposedBlocks} baseLabel={baseLabel} />
 
                       {/* Summary */}
                       {diffResult.summary && (
@@ -681,7 +706,7 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
                       ) : (
                         <button
                           onClick={handleApply}
-                          disabled={applying}
+                          disabled={DEMO_MODE || applying}
                           style={styles.applyBtn}
                         >
                           {applying ? "Applying…" : "Apply to Pipeline"}
@@ -809,7 +834,7 @@ function computeSourceDiff(current: SourceSpec[], proposed: SourceSpec[]) {
   return { removed, added, unchanged };
 }
 
-function SourceDiffView({ currentSources, proposedSources }: { currentSources: SourceSpec[]; proposedSources: SourceSpec[] }) {
+function SourceDiffView({ currentSources, proposedSources, baseLabel = "Current" }: { currentSources: SourceSpec[]; proposedSources: SourceSpec[]; baseLabel?: string }) {
   const sourceDiff = computeSourceDiff(currentSources, proposedSources);
   const hasChanges = sourceDiff.removed.length > 0 || sourceDiff.added.length > 0;
   return (
@@ -819,7 +844,7 @@ function SourceDiffView({ currentSources, proposedSources }: { currentSources: S
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <div>
-          <p style={{ ...styles.diffColHeader, fontSize: 11, color: "#8e8e93" }}>Current ({currentSources.length})</p>
+          <p style={{ ...styles.diffColHeader, fontSize: 11, color: "#8e8e93" }}>{baseLabel} ({currentSources.length})</p>
           {currentSources.map((s, i) => {
             const isRemoved = sourceDiff.removed.some((r) => r.type === s.type && r.feed === s.feed);
             return <SourceDiffRow key={i} source={s} status={isRemoved ? "removed" : "unchanged"} />;
@@ -837,7 +862,7 @@ function SourceDiffView({ currentSources, proposedSources }: { currentSources: S
   );
 }
 
-function BlocksJSONDiffView({ currentBlocks, proposedBlocks }: { currentBlocks: PipelineBlock[]; proposedBlocks: PipelineBlock[] }) {
+function BlocksJSONDiffView({ currentBlocks, proposedBlocks, baseLabel = "Current" }: { currentBlocks: PipelineBlock[]; proposedBlocks: PipelineBlock[]; baseLabel?: string }) {
   const oldStr = JSON.stringify(currentBlocks, null, 2);
   const newStr = JSON.stringify(proposedBlocks, null, 2);
   return (
@@ -849,7 +874,7 @@ function BlocksJSONDiffView({ currentBlocks, proposedBlocks }: { currentBlocks: 
           newValue={newStr}
           splitView={true}
           compareMethod={DiffMethod.LINES}
-          leftTitle="Current"
+          leftTitle={baseLabel}
           rightTitle="Proposed"
           useDarkTheme={false}
           styles={{ variables: { light: { codeFoldGutterBackground: "#f9f9fb" } } }}
@@ -996,5 +1021,19 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "8px 18px",
     borderRadius: 8,
     marginTop: 12,
+  },
+  diffToggleBtn: {
+    fontSize: 12,
+    padding: "4px 12px",
+    borderRadius: 20,
+    border: "1px solid #d1d1d6",
+    background: "transparent",
+    color: "#6e6e73",
+    cursor: "pointer",
+  },
+  diffToggleActive: {
+    background: "#007aff",
+    color: "#fff",
+    borderColor: "#007aff",
   },
 };

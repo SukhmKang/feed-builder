@@ -66,6 +66,7 @@ function ManualVerdictBar({ articleId, currentVerdict, onVerdictChange }: Manual
           ...(currentVerdict === "passed" ? verdictStyles.passedActive : verdictStyles.passedIdle),
         }}
         onClick={() => handleClick("passed")}
+        disabled={DEMO_MODE}
         title={currentVerdict === "passed" ? "Click to clear" : "Mark as passed"}
       >
         {currentVerdict === "passed" ? "✓ Passed" : "Pass"}
@@ -76,6 +77,7 @@ function ManualVerdictBar({ articleId, currentVerdict, onVerdictChange }: Manual
           ...(currentVerdict === "filtered" ? verdictStyles.filteredActive : verdictStyles.filteredIdle),
         }}
         onClick={() => handleClick("filtered")}
+        disabled={DEMO_MODE}
         title={currentVerdict === "filtered" ? "Click to clear" : "Mark as filtered out"}
       >
         {currentVerdict === "filtered" ? "✗ Filtered" : "Filter out"}
@@ -422,6 +424,7 @@ const pipelineStyles: Record<string, React.CSSProperties> = {
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
 import React from "react";
+import { DEMO_MODE } from "../demoMode";
 
 const cardStyles: Record<string, React.CSSProperties> = {
   tags: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 },

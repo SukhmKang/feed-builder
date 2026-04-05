@@ -1,10 +1,14 @@
 import type { ApplyAuditResult, Article, AuditDetail, AuditSummary, CustomBlockOption, Feed, PipelineBlock, PipelineVersion, SourceSpec, StoryDetail, StorySummary } from "../types";
+import { DEMO_MODE } from "../demoMode";
 
 // In dev, leave empty so Vite's proxy handles it.
 // In production, set VITE_API_URL=https://api.yourdomain.com
 const BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  if (DEMO_MODE && options?.method && options.method !== "GET") {
+    throw new Error("Demo mode: mutations are disabled");
+  }
   const res = await fetch(BASE + path, {
     headers: { "Content-Type": "application/json" },
     ...options,

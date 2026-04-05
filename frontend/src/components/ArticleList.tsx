@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { DEMO_MODE } from "../demoMode";
 import type { Article, Feed, PipelineVersion } from "../types";
 import { ArticleCard } from "./ArticleCard";
 
@@ -172,7 +173,7 @@ export function ArticleList({ feed, onPollTriggered, onFeedUpdated }: Props) {
             style={styles.lookbackInput}
           />
         </label>
-        <button onClick={triggerPoll} disabled={polling || replaying} style={styles.pollBtn}>
+        <button onClick={triggerPoll} disabled={DEMO_MODE || polling || replaying} style={styles.pollBtn}>
           {polling ? "Polling…" : "Poll now"}
         </button>
         <label style={styles.lookbackLabel}>
@@ -187,7 +188,7 @@ export function ArticleList({ feed, onPollTriggered, onFeedUpdated }: Props) {
         </label>
         <button
           onClick={() => void handleReplay()}
-          disabled={replaying || polling || feed.active_version_replayed}
+          disabled={DEMO_MODE || replaying || polling || feed.active_version_replayed}
           title={feed.active_version_replayed ? "Already replayed for this pipeline version" : undefined}
           style={styles.replayBtn}
         >
@@ -206,7 +207,7 @@ export function ArticleList({ feed, onPollTriggered, onFeedUpdated }: Props) {
             {previous && (
               <button
                 style={styles.revertBtn}
-                disabled={reverting}
+                disabled={DEMO_MODE || reverting}
                 onClick={() => void handleRevert(previous)}
               >
                 {reverting ? "Reverting…" : `↩ Revert to v${previous.version_number}`}

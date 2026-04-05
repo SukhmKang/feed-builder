@@ -6,6 +6,7 @@ import { CreateFeedModal } from "./components/CreateFeedModal";
 import { FeedCard } from "./components/FeedCard";
 import { PipelineEditor } from "./components/PipelineEditor";
 import { StoriesList } from "./components/StoriesList";
+import { DEMO_MODE } from "./demoMode";
 import type { Feed, PipelineBlock, SourceSpec } from "./types";
 
 export default function App() {
@@ -84,12 +85,17 @@ export default function App() {
   const selectedFeed = feeds.find((f) => f.id === selectedId) ?? null;
 
   return (
-    <div style={styles.root}>
+    <div style={{ ...styles.root, ...(DEMO_MODE ? { paddingTop: 30 } : {}) }}>
+      {DEMO_MODE && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999, background: "#f59e0b", color: "#1c1917", textAlign: "center", padding: "6px", fontSize: 13, fontWeight: 600 }}>
+          Demo mode — all actions are disabled
+        </div>
+      )}
       {/* Sidebar */}
       <aside style={styles.sidebar}>
         <div style={styles.sidebarHeader}>
           <h1 style={styles.logo}>Feed Builder</h1>
-          <button onClick={() => setShowCreate(true)} style={styles.newBtn}>
+          <button onClick={() => setShowCreate(true)} disabled={DEMO_MODE} style={styles.newBtn}>
             + New
           </button>
         </div>
@@ -172,6 +178,7 @@ export default function App() {
                   <button
                     style={styles.toolbarBtn}
                     onClick={() => void handleCopyRss(selectedFeed.id)}
+                    disabled={DEMO_MODE || copyingRss}
                   >
                     {copyingRss ? "Copied RSS" : "Copy RSS"}
                   </button>

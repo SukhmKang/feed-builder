@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api/client";
+import { DEMO_MODE } from "../demoMode";
 import type { Feed } from "../types";
 
 interface Props {
@@ -75,6 +76,7 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
                 value={draftName}
                 onChange={(event) => setDraftName(event.target.value)}
                 onKeyDown={(event) => {
+                  if (DEMO_MODE) return;
                   if (event.key === "Enter") {
                     event.preventDefault();
                     void handleSaveName();
@@ -89,10 +91,10 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
                 maxLength={120}
               />
               <div style={styles.nameEditorActions}>
-                <button onClick={() => void handleSaveName()} disabled={savingName} style={styles.inlineSaveBtn}>
+                <button onClick={() => void handleSaveName()} disabled={DEMO_MODE || savingName} style={styles.inlineSaveBtn}>
                   {savingName ? "…" : "Save"}
                 </button>
-                <button onClick={handleCancelName} disabled={savingName} style={styles.inlineCancelBtn}>
+                <button onClick={handleCancelName} disabled={DEMO_MODE || savingName} style={styles.inlineCancelBtn}>
                   Cancel
                 </button>
               </div>
@@ -106,6 +108,7 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
                   setDraftName(feed.name);
                   setEditingName(true);
                 }}
+                disabled={DEMO_MODE}
                 style={styles.editBtn}
               >
                 Edit
@@ -131,7 +134,7 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
       <div style={styles.footer}>
         <button
           onClick={handleDelete}
-          disabled={deleting}
+          disabled={DEMO_MODE || deleting}
           style={styles.deleteBtn}
         >
           {deleting ? "…" : "Delete"}

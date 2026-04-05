@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
+import { DEMO_MODE } from "../demoMode";
 import type { Feed, StoryDetail, StorySummary } from "../types";
 
 interface Props {
@@ -135,6 +136,7 @@ function StoryCard({ story, detail, isLoadingDetail, onToggle, onRename }: Story
               value={draftTitle}
               onChange={(event) => setDraftTitle(event.target.value)}
               onKeyDown={(event) => {
+                if (DEMO_MODE) return;
                 if (event.key === "Enter") {
                   event.preventDefault();
                   void saveTitle();
@@ -150,7 +152,7 @@ function StoryCard({ story, detail, isLoadingDetail, onToggle, onRename }: Story
               style={S.titleInput}
             />
             <div style={S.titleEditorActions}>
-              <button type="button" style={S.titleActionPrimary} onClick={() => void saveTitle()} disabled={savingTitle}>
+              <button type="button" style={S.titleActionPrimary} onClick={() => void saveTitle()} disabled={DEMO_MODE || savingTitle}>
                 {savingTitle ? "…" : "Save"}
               </button>
               <button
@@ -160,7 +162,7 @@ function StoryCard({ story, detail, isLoadingDetail, onToggle, onRename }: Story
                   setDraftTitle(story.title);
                   setEditingTitle(false);
                 }}
-                disabled={savingTitle}
+                disabled={DEMO_MODE || savingTitle}
               >
                 Cancel
               </button>
@@ -180,6 +182,7 @@ function StoryCard({ story, detail, isLoadingDetail, onToggle, onRename }: Story
               type="button"
               style={S.editTitleButton}
               onClick={() => setEditingTitle(true)}
+              disabled={DEMO_MODE}
             >
               Edit
             </button>
