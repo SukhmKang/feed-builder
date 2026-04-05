@@ -1,0 +1,15 @@
+[Unit]
+Description=Feed Builder API server
+After=network.target
+
+[Service]
+User=root
+Group=root
+WorkingDirectory=/srv/feed-builder
+EnvironmentFile=/srv/feed-builder/.env
+ExecStart=/srv/feed-builder/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
