@@ -152,16 +152,16 @@ export default function App() {
               <>
                 <div style={styles.tabs}>
                   <button
-                    style={{ ...styles.tab, ...(activeTab === "articles" ? styles.tabActive : {}) }}
-                    onClick={() => setActiveTab("articles")}
-                  >
-                    Articles
-                  </button>
-                  <button
                     style={{ ...styles.tab, ...(activeTab === "stories" ? styles.tabActive : {}) }}
                     onClick={() => setActiveTab("stories")}
                   >
                     Stories
+                  </button>
+                  <button
+                    style={{ ...styles.tab, ...(activeTab === "articles" ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab("articles")}
+                  >
+                    Articles
                   </button>
                   <button
                     style={{ ...styles.tab, ...(activeTab === "pipeline" ? styles.tabActive : {}) }}
