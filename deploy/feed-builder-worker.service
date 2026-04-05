@@ -3,8 +3,8 @@ Description=Feed Builder worker
 After=network.target
 
 [Service]
-User=root
-Group=root
+User=feed-builder
+Group=feed-builder
 WorkingDirectory=/srv/feed-builder
 EnvironmentFile=/srv/feed-builder/.env
 ExecStart=/srv/feed-builder/venv/bin/python -m uvicorn app.worker.app:app --host 127.0.0.1 --port 8001

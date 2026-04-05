@@ -50,7 +50,7 @@ export function CreateFeedModal({ onCreated, onClose }: Props) {
             <div style={styles.spinner} />
             <p style={styles.buildingText}>Building your feed…</p>
             <p style={styles.buildingSubtext}>
-              The agent is discovering sources and generating filters. This can take up to 10 minutes.
+              The agent is discovering sources and generating filters. This can take up to 10 minutes. You can close the page during generation.
             </p>
           </div>
         ) : (
