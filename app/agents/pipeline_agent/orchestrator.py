@@ -11,6 +11,7 @@ Workflow:
 """
 
 import asyncio
+import os
 from typing import Any
 
 from app.agents.cache import run_cache_context
@@ -27,6 +28,41 @@ from .runtime import (
     run_source_agent,
 )
 from .types import DispatchPlan, PipelineAgentResult, SourceAgentOutput, SourceGenerationResult
+
+DEFAULT_SOURCE_AGENT_CONCURRENCY = 1
+
+
+def get_source_agent_concurrency() -> int:
+    raw_value = str(
+        os.getenv("PIPELINE_SOURCE_AGENT_CONCURRENCY", str(DEFAULT_SOURCE_AGENT_CONCURRENCY))
+    ).strip()
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return DEFAULT_SOURCE_AGENT_CONCURRENCY
+    return max(1, value)
+
+
+async def gather_source_agent_outputs(
+    agent_names: list[str],
+    topic: str,
+    *,
+    agent_model: str,
+    verbose: bool,
+) -> list[SourceAgentOutput]:
+    concurrency = min(get_source_agent_concurrency(), max(1, len(agent_names)))
+    log(
+        verbose,
+        "source_agents.execution_plan",
+        {"agent_count": len(agent_names), "concurrency": concurrency, "agents": agent_names},
+    )
+    semaphore = asyncio.Semaphore(concurrency)
+
+    async def run_one(agent_name: str) -> SourceAgentOutput:
+        async with semaphore:
+            return await run_source_agent(agent_name, topic, model=agent_model, verbose=verbose)
+
+    return await asyncio.gather(*[run_one(agent_name) for agent_name in agent_names])
 
 
 async def build_feed_config(
@@ -77,11 +113,11 @@ async def build_sources_for_topic(
         )
 
     async with log_timed(verbose, "source_agents"):
-        specialist_outputs = await asyncio.gather(
-            *[
-                run_source_agent(agent_name, normalized_topic, model=agent_model, verbose=verbose)
-                for agent_name in normalized_agents
-            ]
+        specialist_outputs = await gather_source_agent_outputs(
+            normalized_agents,
+            normalized_topic,
+            agent_model=agent_model,
+            verbose=verbose,
         )
 
     merged_sources = merge_source_agent_outputs(specialist_outputs)
