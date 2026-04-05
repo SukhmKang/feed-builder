@@ -4,7 +4,7 @@ from typing import Any
 from app.pipeline.llm_batching import run_pipeline_batch
 from app.pipeline.schema import deserialize_pipeline
 
-from .cache import fetch_articles_cached
+from app.agents.cache import fetch_articles_cached
 
 from .logging import article_log_summary, log
 from .types import SourceAgentOutput
