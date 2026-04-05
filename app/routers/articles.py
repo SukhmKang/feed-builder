@@ -3,6 +3,7 @@
 import json
 import logging
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,14 +34,25 @@ def _parse_sort_datetime(value: Any) -> datetime:
     if not text:
         return datetime.min.replace(tzinfo=timezone.utc)
 
+    # Try ISO 8601
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
     except ValueError:
-        return datetime.min.replace(tzinfo=timezone.utc)
+        pass
 
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    # Fallback: RFC 2822 (e.g. Tavily's published_date before normalization)
+    try:
+        parsed = parsedate_to_datetime(text)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        pass
+
+    return datetime.min.replace(tzinfo=timezone.utc)
 
 
 def _article_sort_key(payload: dict[str, Any]) -> tuple[datetime, datetime]:

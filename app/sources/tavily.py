@@ -8,6 +8,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from html import unescape
 from itertools import cycle
 from typing import Any
@@ -88,13 +89,33 @@ def _search_tavily(query: str, days: int, max_results: int) -> list[dict[str, An
     return filtered
 
 
+def _parse_published_date(value: str) -> str:
+    """Normalize a Tavily published_date (RFC 2822 or ISO) to an ISO 8601 string."""
+    if not value:
+        return datetime.now(timezone.utc).isoformat()
+    # Try RFC 2822 first (e.g. "Wed, 03 Apr 2026 14:30:00 GMT")
+    try:
+        return parsedate_to_datetime(value).astimezone(timezone.utc).isoformat()
+    except Exception:
+        pass
+    # Try ISO 8601
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat()
+    except ValueError:
+        pass
+    return datetime.now(timezone.utc).isoformat()
+
+
 def _normalize_tavily_result(result: dict[str, Any], *, query: str) -> dict[str, Any]:
     url = str(result.get("url", "")).strip()
     title = unescape(str(result.get("title", "")).strip())
     snippet = unescape(str(result.get("content", "")).strip())
     raw_content = unescape(str(result.get("raw_content", "")).strip())
     source_name = unescape(str(result.get("source", "")).strip()) or "Tavily"
-    published_at = str(result.get("published_date", "")).strip() or datetime.now(timezone.utc).isoformat()
+    published_at = _parse_published_date(str(result.get("published_date", "") or "").strip())
 
     return {
         "id": hashlib.md5(url.encode("utf-8")).hexdigest(),
