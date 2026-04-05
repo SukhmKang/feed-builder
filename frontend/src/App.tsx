@@ -178,7 +178,7 @@ export default function App() {
                   <button
                     style={styles.toolbarBtn}
                     onClick={() => void handleCopyRss(selectedFeed.id)}
-                    disabled={DEMO_MODE || copyingRss}
+                    disabled={copyingRss}
                   >
                     {copyingRss ? "Copied RSS" : "Copy RSS"}
                   </button>
