@@ -9,11 +9,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
 from app.routers import articles, audits, feeds, pipeline_versions, stories
 
-# Dev origins are always allowed. Add your Vercel/Netlify URL via FRONTEND_URL.
-# e.g. FRONTEND_URL=https://feed-builder.vercel.app
+# Dev origins are always allowed. Add your Vercel/Netlify URL(s) via FRONTEND_URL.
+# Comma-separated for multiple: FRONTEND_URL=https://app.vercel.app,https://demo.vercel.app
 _dev_origins = ["http://localhost:5173", "http://localhost:3000"]
-_prod_origin = os.environ.get("FRONTEND_URL", "").strip()
-_allowed_origins = _dev_origins + ([_prod_origin] if _prod_origin else [])
+_prod_origins = [u for u in (u.strip() for u in os.environ.get("FRONTEND_URL", "").split(",")) if u]
+_allowed_origins = _dev_origins + _prod_origins
 
 logging.basicConfig(
     level=logging.INFO,
