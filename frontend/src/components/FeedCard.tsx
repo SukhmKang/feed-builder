@@ -68,7 +68,7 @@ export function FeedCard({ feed, selected, onSelect, onUpdated, onDeleted }: Pro
       }}
     >
       <div style={styles.header} onClick={onSelect}>
-        <div>
+        <div style={{ minWidth: 0, flex: 1 }}>
           {editingName ? (
             <div style={styles.nameEditor} onClick={(event) => event.stopPropagation()}>
               <input
