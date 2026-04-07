@@ -1,11 +1,13 @@
 """Discovery-oriented Claude Agent SDK tools."""
 
+import asyncio
 import os
 import random
 from typing import Any
 
 from claude_agent_sdk import tool
 from dotenv import load_dotenv
+from exa_py import Exa
 from tavily import AsyncTavilyClient
 
 from app.sources.discover_feeds import discover_feeds_detailed
@@ -34,6 +36,13 @@ load_dotenv()
 
 
 async def _search_web_results(query: str) -> list[dict[str, str]]:
+    provider = os.getenv("SEARCH_PROVIDER", "tavily").strip().lower()
+    if provider == "exa":
+        return await _search_web_results_exa(query)
+    return await _search_web_results_tavily(query)
+
+
+async def _search_web_results_tavily(query: str) -> list[dict[str, str]]:
     api_key = _pick_tavily_api_key()
     client = AsyncTavilyClient(api_key=api_key)
     payload = await client.search(
@@ -55,6 +64,32 @@ async def _search_web_results(query: str) -> list[dict[str, str]]:
         snippet = str(item.get("content", "") or item.get("snippet", "")).strip()
         if not url:
             continue
+        normalized.append({"title": title, "url": url, "snippet": truncate_text(snippet, max_chars=80)})
+    return normalized
+
+
+async def _search_web_results_exa(query: str) -> list[dict[str, str]]:
+    api_key = os.getenv("EXA_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError("EXA_API_KEY is not configured")
+
+    client = Exa(api_key=api_key)
+    response = await asyncio.to_thread(
+        client.search_and_contents,
+        query,
+        num_results=MAX_PREVIEW_LIMIT,
+        highlights={"max_characters": 200},
+        type="auto",
+    )
+
+    normalized: list[dict[str, str]] = []
+    for item in (response.results or [])[:MAX_PREVIEW_LIMIT]:
+        title = str(getattr(item, "title", "") or "").strip()
+        url = str(getattr(item, "url", "") or "").strip()
+        if not url:
+            continue
+        highlights = getattr(item, "highlights", None) or []
+        snippet = " ".join(highlights).strip()
         normalized.append({"title": title, "url": url, "snippet": truncate_text(snippet, max_chars=80)})
     return normalized
 
