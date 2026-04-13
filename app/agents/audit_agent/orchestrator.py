@@ -144,56 +144,81 @@ async def run_and_persist_audit(
         db.commit()
         audit_id = record.id
         logger.info("audit.persisted_start audit_id=%s feed_id=%s", audit_id, feed_id)
+    finally:
+        db.close()
 
+    try:
+        report = await run_audit(
+            feed_id,
+            start=start,
+            end=end,
+            model=model,
+            enable_replay=enable_replay,
+            enable_discovery=enable_discovery,
+        )
+
+        db = SessionLocal()
         try:
-            report = await run_audit(
-                feed_id,
-                start=start,
-                end=end,
-                model=model,
-                enable_replay=enable_replay,
-                enable_discovery=enable_discovery,
-                db=db,
-            )
+            record = db.get(AuditResult, audit_id)
+            if record is None:
+                raise ValueError(f"AuditResult not found while persisting completion: {audit_id}")
             record.result_json = json.dumps(report)
             record.status = "complete"
             record.completed_at = datetime.utcnow()
             db.commit()
             logger.info("audit.persisted_complete audit_id=%s", audit_id)
+        finally:
+            db.close()
 
-            # Generate and persist the proposed pipeline config
+        # Generate and persist the proposed pipeline config
+        try:
+            from app.agents.pipeline_agent.runtime import run_audit_remediation_agent
+
+            snapshot = report.get("current_config_snapshot", {})
+            remediation = await run_audit_remediation_agent(
+                str(snapshot.get("topic") or report.get("topic") or "").strip(),
+                snapshot.get("sources", []),
+                snapshot.get("blocks", []),
+                report,
+                model=model,
+                verbose=False,
+            )
+            proposed_config = {
+                "sources": remediation["sources"],
+                "blocks": remediation["blocks_json"],
+                "_summary": remediation["summary"],
+            }
+
+            db = SessionLocal()
             try:
-                from app.agents.pipeline_agent.runtime import run_audit_remediation_agent
-                snapshot = report.get("current_config_snapshot", {})
-                remediation = await run_audit_remediation_agent(
-                    str(snapshot.get("topic") or report.get("topic") or "").strip(),
-                    snapshot.get("sources", []),
-                    snapshot.get("blocks", []),
-                    report,
-                    model=model,
-                    verbose=False,
-                )
-                proposed_config = {
-                    "sources": remediation["sources"],
-                    "blocks": remediation["blocks_json"],
-                    "_summary": remediation["summary"],
-                }
+                record = db.get(AuditResult, audit_id)
+                if record is None:
+                    raise ValueError(f"AuditResult not found while persisting proposed config: {audit_id}")
                 record.proposed_config_json = json.dumps(proposed_config)
                 db.commit()
                 logger.info("audit.proposed_config_persisted audit_id=%s", audit_id)
-            except Exception:
-                logger.exception("audit.proposed_config_failed audit_id=%s — continuing", audit_id)
-        except Exception as exc:
-            logger.exception("audit.failed audit_id=%s feed_id=%s", audit_id, feed_id)
-            record.status = "error"
-            record.error_message = str(exc)
-            record.completed_at = datetime.utcnow()
-            db.commit()
-            raise
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("audit.proposed_config_failed audit_id=%s — continuing", audit_id)
+    except Exception as exc:
+        logger.exception("audit.failed audit_id=%s feed_id=%s", audit_id, feed_id)
+        db = SessionLocal()
+        try:
+            record = db.get(AuditResult, audit_id)
+            if record is not None:
+                record.status = "error"
+                record.error_message = str(exc)
+                record.completed_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            db.rollback()
+            logger.exception("audit.failed_to_persist_error audit_id=%s feed_id=%s", audit_id, feed_id)
+        finally:
+            db.close()
+        raise
 
-        return audit_id
-    finally:
-        db.close()
+    return audit_id
 
 
 __all__ = ["run_audit", "run_and_persist_audit"]
