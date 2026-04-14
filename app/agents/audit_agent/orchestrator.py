@@ -2,6 +2,7 @@
 
 import json
 import logging
+from contextlib import suppress
 from datetime import datetime, timezone
 
 from app.database import AuditResult, Feed, PipelineVersion, SessionLocal
@@ -44,7 +45,8 @@ async def run_audit(
         )
     finally:
         if own_db:
-            db.close()
+            with suppress(Exception):
+                db.close()
 
 
 async def _run(
