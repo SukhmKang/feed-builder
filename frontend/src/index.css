@@ -15,6 +15,7 @@ button {
   font-weight: 500;
   padding: 8px 16px;
   transition: opacity 0.15s;
+  outline: none;
 }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 

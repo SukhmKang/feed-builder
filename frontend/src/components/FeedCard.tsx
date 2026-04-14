@@ -161,6 +161,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
     transition: "border-color 0.15s, box-shadow 0.15s",
     cursor: "default",
+    outline: "none",
   },
   cardSelected: {
     borderColor: "#007aff",
