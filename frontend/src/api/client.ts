@@ -87,7 +87,7 @@ export const api = {
     get: (feedId: string, auditId: string) => request<AuditDetail>(`/feeds/${feedId}/audits/${auditId}`),
     trigger: (
       feedId: string,
-      data: { start: string; end: string; enable_replay?: boolean; enable_discovery?: boolean },
+      data: { start: string; end: string; enable_replay?: boolean; enable_discovery?: boolean; user_context?: string },
     ) =>
       request<{ status: string; message: string }>(`/feeds/${feedId}/audits`, {
         method: "POST",

@@ -97,6 +97,7 @@ async def run_audit_critic(
     current_sources: list[dict[str, Any]],
     model: str = DEFAULT_AGENT_MODEL,
     enable_discovery: bool = True,
+    user_context: str | None = None,
 ) -> tuple[AuditAssessment, ManualOverrideAssessment, PipelineRecommendation, SourceRecommendation, list[dict[str, Any]]]:
     """Run the four-step audit critique.
 
@@ -107,7 +108,7 @@ async def run_audit_critic(
     stats_table = format_stats_table(payload["stats"])
 
     # Step 1 — Assessment
-    step_1_task = _build_step_1_task(topic, payload, stats_table)
+    step_1_task = _build_step_1_task(topic, payload, stats_table, user_context=user_context)
     assessment: AuditAssessment = await _run_step(
         task_prompt=step_1_task,
         system_prompt=_step_1_system_prompt(),
@@ -138,7 +139,7 @@ async def run_audit_critic(
         logger.info("audit_critic.manual_overrides.done")
 
     # Step 2 — Pipeline recommendations
-    step_2_task = _build_step_2_task(topic, assessment, manual_override_assessment, blocks_json)
+    step_2_task = _build_step_2_task(topic, assessment, manual_override_assessment, blocks_json, user_context=user_context)
     pipeline_recs: PipelineRecommendation = await _run_step(
         task_prompt=step_2_task,
         system_prompt=_step_2_system_prompt(),
@@ -150,7 +151,7 @@ async def run_audit_critic(
     logger.info("audit_critic.step_2.done satisfied=%s", pipeline_recs.get("satisfied"))
 
     # Step 3 — Source recommendations
-    step_3_task = _build_step_3_task(topic, assessment, manual_override_assessment, current_sources, payload["stats"])
+    step_3_task = _build_step_3_task(topic, assessment, manual_override_assessment, current_sources, payload["stats"], user_context=user_context)
     source_recs: SourceRecommendation = await _run_step(
         task_prompt=step_3_task,
         system_prompt=_step_3_system_prompt(),
@@ -203,9 +204,17 @@ async def _run_step(
 
 # ---- Prompt builders ----
 
-def _build_step_1_task(topic: str, payload: AuditSummaryPayload, stats_table: str) -> str:
+def _build_step_1_task(topic: str, payload: AuditSummaryPayload, stats_table: str, *, user_context: str | None = None) -> str:
     parts = [
         f"User topic: {topic.strip()}",
+    ]
+    if user_context and user_context.strip():
+        parts += [
+            "User guidance for this audit:",
+            user_context.strip(),
+            "---",
+        ]
+    parts += [
         stats_table,
         "Important: if an article sample has manually_overridden=true and a manual_verdict value, that is a user correction and should be treated as the effective ground truth for audit purposes.",
         f"Passed article sample ({len(payload['passed_sample'])} of {payload['stats']['passed_count']}):",
@@ -234,9 +243,13 @@ def _build_step_2_task(
     assessment: AuditAssessment,
     manual_override_assessment: ManualOverrideAssessment,
     blocks_json: list[dict[str, Any]],
+    *,
+    user_context: str | None = None,
 ) -> str:
-    return "\n\n".join([
-        f"User topic: {topic.strip()}",
+    parts = [f"User topic: {topic.strip()}"]
+    if user_context and user_context.strip():
+        parts += ["User guidance for this audit:", user_context.strip(), "---"]
+    parts += [
         "Quality assessment from step 1:",
         json.dumps(assessment, indent=2),
         "Manual override learnings:",
@@ -245,7 +258,8 @@ def _build_step_2_task(
         json.dumps(_strip_internal_fields(blocks_json), indent=2),
         "Given this assessment and the pipeline, decide whether pipeline logic needs changes and suggest specific block-level edits.",
         "Do not suggest adding, removing, or changing sources — that is handled separately.",
-    ])
+    ]
+    return "\n\n".join(parts)
 
 
 def _build_step_3_task(
@@ -254,6 +268,8 @@ def _build_step_3_task(
     manual_override_assessment: ManualOverrideAssessment,
     current_sources: list[dict[str, Any]],
     stats: Any,
+    *,
+    user_context: str | None = None,
 ) -> str:
     per_source_lines: list[str] = []
     for src in stats.get("per_source", []):
@@ -263,8 +279,10 @@ def _build_step_3_task(
         )
     per_source_text = "\n".join(per_source_lines) if per_source_lines else "  (no per-source data)"
 
-    return "\n\n".join([
-        f"User topic: {topic.strip()}",
+    parts = [f"User topic: {topic.strip()}"]
+    if user_context and user_context.strip():
+        parts += ["User guidance for this audit:", user_context.strip(), "---"]
+    parts += [
         "Quality assessment from step 1:",
         json.dumps(assessment, indent=2),
         "Manual override learnings:",
@@ -279,7 +297,8 @@ def _build_step_3_task(
         "For modifications: be specific about what changes (e.g., narrower subreddit, different query). Group similar modifications when practical.",
         "For add_needed: describe the coverage gap. Do NOT invent specific feed URLs.",
         "If the source set is healthy, set satisfied=true with an empty suggested_changes list.",
-    ])
+    ]
+    return "\n\n".join(parts)
 
 
 def _step_1_system_prompt() -> str:

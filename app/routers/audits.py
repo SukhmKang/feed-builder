@@ -21,6 +21,7 @@ class TriggerAuditRequest(BaseModel):
     end: datetime
     enable_replay: bool = True
     enable_discovery: bool = True
+    user_context: str | None = None  # optional free-form guidance injected into audit prompts
 
 
 class ApplyAuditRequest(BaseModel):
@@ -93,6 +94,7 @@ async def trigger_audit(
         end=req.end,
         enable_replay=req.enable_replay,
         enable_discovery=req.enable_discovery,
+        user_context=req.user_context or None,
     )
 
     return {
@@ -219,6 +221,7 @@ async def _run_audit_task(
     end: datetime,
     enable_replay: bool,
     enable_discovery: bool,
+    user_context: str | None = None,
 ) -> None:
     """Background task: dispatch audit job to the worker service."""
     from app.worker.client import dispatch_audit
@@ -230,6 +233,7 @@ async def _run_audit_task(
             end=end,
             enable_replay=enable_replay,
             enable_discovery=enable_discovery,
+            user_context=user_context,
         )
     except Exception:
         logger.exception("Failed to dispatch audit feed_id=%s", feed_id)
@@ -253,4 +257,5 @@ def _summarize_record(record: AuditResult, db=None) -> dict[str, Any]:
         "error_message": record.error_message,
         "pipeline_version_id": record.pipeline_version_id,
         "pipeline_version_number": version_number,
+        "user_context": record.user_context,
     }

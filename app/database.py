@@ -126,6 +126,7 @@ class AuditResult(Base):
     completed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     pipeline_version_id = Column(String, nullable=True)  # FK to pipeline_versions.id
+    user_context = Column(Text, nullable=True)            # optional free-form user guidance
 
 
 class FeedReport(Base):
@@ -158,6 +159,7 @@ def _run_migrations() -> None:
             ("ALTER TABLE pipeline_versions ADD COLUMN has_been_replayed BOOLEAN DEFAULT 0", "pipeline_versions.has_been_replayed"),
             ("ALTER TABLE articles ADD COLUMN spec_source_type TEXT", "articles.spec_source_type"),
             ("ALTER TABLE articles ADD COLUMN spec_source_feed TEXT", "articles.spec_source_feed"),
+            ("ALTER TABLE audit_results ADD COLUMN user_context TEXT", "audit_results.user_context"),
         ]:
             try:
                 conn.execute(text(stmt))

@@ -138,6 +138,7 @@ export interface AuditSummary {
   error_message: string | null;
   pipeline_version_id: string | null;
   pipeline_version_number: number | null;
+  user_context: string | null;
 }
 
 export interface AuditReport {

@@ -27,6 +27,7 @@ async def dispatch_audit(
     end: datetime,
     enable_replay: bool,
     enable_discovery: bool,
+    user_context: str | None = None,
 ) -> None:
     await _post(
         "/run-audit",
@@ -36,6 +37,7 @@ async def dispatch_audit(
             "end": end.isoformat(),
             "enable_replay": enable_replay,
             "enable_discovery": enable_discovery,
+            "user_context": user_context,
         },
     )
 

@@ -24,6 +24,7 @@ async def run_audit(
     model: str = DEFAULT_AGENT_MODEL,
     enable_replay: bool = True,
     enable_discovery: bool = True,
+    user_context: str | None = None,
     db=None,
 ) -> AuditReport:
     """Run the full audit flow for a feed over the given period.
@@ -41,6 +42,7 @@ async def run_audit(
             model=model,
             enable_replay=enable_replay,
             enable_discovery=enable_discovery,
+            user_context=user_context,
             db=db,
         )
     finally:
@@ -57,6 +59,7 @@ async def _run(
     model: str,
     enable_replay: bool,
     enable_discovery: bool,
+    user_context: str | None,
     db,
 ) -> AuditReport:
     logger.info(
@@ -96,6 +99,7 @@ async def _run(
         current_sources=sources,
         model=model,
         enable_discovery=enable_discovery,
+        user_context=user_context,
     )
 
     now = datetime.now(tz=timezone.utc)
@@ -125,6 +129,7 @@ async def run_and_persist_audit(
     model: str = DEFAULT_AGENT_MODEL,
     enable_replay: bool = True,
     enable_discovery: bool = True,
+    user_context: str | None = None,
 ) -> str:
     """Wrap run_audit() with DB persistence. Returns the AuditResult.id."""
     db = SessionLocal()
@@ -141,6 +146,7 @@ async def run_and_persist_audit(
             status="running",
             started_at=now,
             pipeline_version_id=active_version.id if active_version else None,
+            user_context=user_context or None,
         )
         db.add(record)
         db.commit()
@@ -157,6 +163,7 @@ async def run_and_persist_audit(
             model=model,
             enable_replay=enable_replay,
             enable_discovery=enable_discovery,
+            user_context=user_context,
         )
 
         db = SessionLocal()

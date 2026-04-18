@@ -46,6 +46,7 @@ class RunAuditRequest(BaseModel):
     end: datetime
     enable_replay: bool = True
     enable_discovery: bool = True
+    user_context: str | None = None
 
 
 class ReplayRequest(BaseModel):
@@ -82,6 +83,7 @@ async def run_audit_endpoint(req: RunAuditRequest, background_tasks: BackgroundT
         end=req.end,
         enable_replay=req.enable_replay,
         enable_discovery=req.enable_discovery,
+        user_context=req.user_context,
     )
     return {"status": "accepted", "feed_id": req.feed_id}
 
@@ -185,6 +187,7 @@ async def _run_audit_job(
     end: datetime,
     enable_replay: bool,
     enable_discovery: bool,
+    user_context: str | None = None,
 ) -> None:
     from app.agents.audit_agent.orchestrator import run_and_persist_audit
 
@@ -195,6 +198,7 @@ async def _run_audit_job(
             end=end,
             enable_replay=enable_replay,
             enable_discovery=enable_discovery,
+            user_context=user_context,
         )
         logger.info("audit_job complete audit_id=%s feed_id=%s", audit_id, feed_id)
     except Exception:

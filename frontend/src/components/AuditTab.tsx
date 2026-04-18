@@ -127,6 +127,7 @@ function RunAuditModal({ feedId, onClose, onTriggered }: RunModalProps) {
   const [end, setEnd] = useState(toDatetimeLocal(now));
   const [enableReplay, setEnableReplay] = useState(true);
   const [enableDiscovery, setEnableDiscovery] = useState(false);
+  const [userContext, setUserContext] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -141,6 +142,7 @@ function RunAuditModal({ feedId, onClose, onTriggered }: RunModalProps) {
         end: new Date(end).toISOString(),
         enable_replay: enableReplay,
         enable_discovery: enableDiscovery,
+        user_context: userContext.trim() || undefined,
       });
       // Fetch the list to find the newly created audit (it'll be first, newest)
       const audits = await api.audits.list(feedId);
@@ -194,6 +196,17 @@ function RunAuditModal({ feedId, onClose, onTriggered }: RunModalProps) {
               onChange={(e) => setEnableDiscovery(e.target.checked)}
             />
             Enable source discovery (AI finds new sources)
+          </label>
+          <label style={{ ...modalStyles.label, marginTop: 12 }}>
+            Your guidance <span style={{ color: "#8e8e93", fontWeight: 400 }}>(optional)</span>
+            <textarea
+              value={userContext}
+              onChange={(e) => setUserContext(e.target.value)}
+              placeholder="e.g. Please add Reddit sources about topic X. Avoid content about Y."
+              rows={3}
+              style={{ ...modalStyles.input, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5 }}
+              disabled={loading}
+            />
           </label>
           {error && <p style={{ color: "#ff3b30", fontSize: 12, margin: "8px 0" }}>{error}</p>}
           <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
@@ -495,6 +508,13 @@ export function AuditTab({ feed, onFeedUpdated }: Props) {
                 <p style={{ color: "#8e8e93", fontSize: 14 }}>Audit in progress… refreshing automatically.</p>
               </div>
             ) : null}
+
+            {detail.user_context && (
+              <div style={{ margin: "16px 20px 4px", padding: "10px 14px", background: "#F8F9FA", border: "1px solid #E8EAED", borderRadius: 8 }}>
+                <p style={{ margin: "0 0 3px", fontSize: 11, fontWeight: 600, color: "#5F6368", textTransform: "uppercase", letterSpacing: "0.04em" }}>Your guidance</p>
+                <p style={{ margin: 0, fontSize: 13, color: "#3C4043", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{detail.user_context}</p>
+              </div>
+            )}
 
             {detail.report && (
               <div style={{ padding: "16px 20px" }}>
