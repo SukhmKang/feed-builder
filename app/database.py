@@ -128,6 +128,18 @@ class AuditResult(Base):
     pipeline_version_id = Column(String, nullable=True)  # FK to pipeline_versions.id
 
 
+class FeedReport(Base):
+    __tablename__ = "feed_reports"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    feed_id = Column(String, nullable=False)
+    date_from = Column(DateTime, nullable=False)
+    date_to = Column(DateTime, nullable=False)
+    story_count = Column(Integer, default=0)
+    r2_key = Column(String, nullable=True)   # object key in the R2 bucket
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 def create_tables() -> None:
     Base.metadata.create_all(bind=engine)
     _run_migrations()

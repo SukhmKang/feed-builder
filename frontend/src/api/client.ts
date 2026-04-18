@@ -1,4 +1,4 @@
-import type { ApplyAuditResult, Article, AuditDetail, AuditSummary, CustomBlockOption, Feed, PipelineBlock, PipelineVersion, SourceSpec, StoryDetail, StorySummary } from "../types";
+import type { ApplyAuditResult, Article, AuditDetail, AuditSummary, CustomBlockOption, Feed, PipelineBlock, PipelineVersion, ReportRecord, SourceSpec, StoryDetail, StorySummary } from "../types";
 import { DEMO_MODE } from "../demoMode";
 
 // In dev, leave empty so Vite's proxy handles it.
@@ -121,6 +121,18 @@ export const api = {
         method: "PATCH",
         body: JSON.stringify(data),
       }),
+  },
+  reports: {
+    list: (feedId: string) => request<ReportRecord[]>(`/feeds/${feedId}/reports`),
+    generate: (feedId: string, dateFrom: string, dateTo: string) =>
+      request<ReportRecord>(`/feeds/${feedId}/reports`, {
+        method: "POST",
+        body: JSON.stringify({ date_from: dateFrom, date_to: dateTo }),
+      }),
+    downloadUrl: (feedId: string, reportId: string) =>
+      `${BASE}/feeds/${feedId}/reports/${reportId}/download`,
+    delete: (feedId: string, reportId: string) =>
+      request<void>(`/feeds/${feedId}/reports/${reportId}`, { method: "DELETE" }),
   },
 };
 

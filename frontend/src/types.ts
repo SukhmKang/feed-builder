@@ -209,6 +209,16 @@ export interface AuditDetail extends AuditSummary {
   proposed_config: { sources: SourceSpec[]; blocks: PipelineBlock[]; _summary?: string } | null;
 }
 
+export interface ReportRecord {
+  id: string;
+  feed_id: string;
+  date_from: string;
+  date_to: string;
+  story_count: number;
+  r2_key: string | null;
+  created_at: string | null;
+}
+
 export interface ApplyAuditResult {
   saved: boolean;
   summary: string;

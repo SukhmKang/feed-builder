@@ -5,6 +5,7 @@ import { AuditTab } from "./components/AuditTab";
 import { CreateFeedModal } from "./components/CreateFeedModal";
 import { FeedCard } from "./components/FeedCard";
 import { PipelineEditor } from "./components/PipelineEditor";
+import { ReportsTab } from "./components/ReportsTab";
 import { StoriesList } from "./components/StoriesList";
 import { DEMO_MODE } from "./demoMode";
 import type { Feed, PipelineBlock, SourceSpec } from "./types";
@@ -12,7 +13,7 @@ import type { Feed, PipelineBlock, SourceSpec } from "./types";
 export default function App() {
   const [feeds, setFeeds] = useState<Feed[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline" | "audits">("stories");
+  const [activeTab, setActiveTab] = useState<"articles" | "stories" | "pipeline" | "audits" | "reports">("stories");
   const [showCreate, setShowCreate] = useState(false);
   const [loadingFeeds, setLoadingFeeds] = useState(true);
   const [copyingRss, setCopyingRss] = useState(false);
@@ -176,6 +177,12 @@ export default function App() {
                     Audits
                   </button>
                   <button
+                    style={{ ...styles.tab, ...(activeTab === "reports" ? styles.tabActive : {}) }}
+                    onClick={() => setActiveTab("reports")}
+                  >
+                    Reports
+                  </button>
+                  <button
                     style={styles.toolbarBtn}
                     onClick={() => void handleCopyRss(selectedFeed.id)}
                     disabled={copyingRss}
@@ -189,6 +196,8 @@ export default function App() {
                   <StoriesList feed={selectedFeed} />
                 ) : activeTab === "audits" ? (
                   <AuditTab feed={selectedFeed} onFeedUpdated={handleFeedUpdated} />
+                ) : activeTab === "reports" ? (
+                  <ReportsTab feed={selectedFeed} />
                 ) : (
                   <PipelineEditor
                     key={selectedFeed.id}

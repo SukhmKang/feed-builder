@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_tables
-from app.routers import articles, audits, feeds, pipeline_versions, stories
+from app.routers import articles, audits, feeds, pipeline_versions, reports, stories
 
 # Dev origins are always allowed. Add your Vercel/Netlify URL(s) via FRONTEND_URL.
 # Comma-separated for multiple: FRONTEND_URL=https://app.vercel.app,https://demo.vercel.app
@@ -170,6 +170,7 @@ app.include_router(articles.router)
 app.include_router(stories.router)
 app.include_router(audits.router)
 app.include_router(pipeline_versions.router)
+app.include_router(reports.router)
 
 
 @app.get("/health")
