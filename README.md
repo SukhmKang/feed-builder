@@ -1,10 +1,6 @@
-# Feed Builder
-
-A personal news feed aggregator powered by AI. You define what topics matter to you — the AI builds your sources, filtering pipeline, and keeps it tuned over time.
-
 ## What it does
 
-**Feed Builder** lets you create custom news feeds from multiple source types (RSS, YouTube, Reddit, Twitter/Nitter, Tavily web search). Each feed runs a configurable multi-stage pipeline that scores, filters, and ranks articles using LLM-based rules — so you get signal, not noise.
+**Feed Builder** lets you create custom news feeds from multiple source types (RSS, YouTube, Reddit, Twitter/Nitter, Tavily web search). Each feed consists of a list of sources and filters.
 
 ### Key features
 
@@ -17,17 +13,6 @@ A personal news feed aggregator powered by AI. You define what topics matter to 
 - **Manual verdicts** — override the pipeline's pass/filter decision on individual articles
 - **RSS output** — every feed exposes a standard RSS endpoint for use in any reader
 - **Demo mode** — deploy a read-only frontend where all mutating actions are disabled
-
-## Tech stack
-
-| Layer | Technology |
-|---|---|
-| Backend | Python, FastAPI, SQLAlchemy, APScheduler |
-| Frontend | React 18, TypeScript, Vite |
-| Database | PostgreSQL (SQLite for local dev) |
-| AI | Anthropic Claude (primary), OpenAI (optional) |
-| Sources | feedparser, YouTube Data API, Tavily, Nitter, trafilatura |
-| Deployment | DigitalOcean VPS, Caddy, Neon PostgreSQL, Vercel (frontend) |
 
 ## Environment variables
 
