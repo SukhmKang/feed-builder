@@ -1,14 +1,16 @@
 """Discovery-oriented Claude Agent SDK tools."""
 
 import asyncio
+import logging
 import os
-import random
 from typing import Any
 
 from claude_agent_sdk import tool
 from dotenv import load_dotenv
 from exa_py import Exa
 from tavily import AsyncTavilyClient
+
+from app.sources.tavily import _get_tavily_key_manager
 
 from app.sources.discover_feeds import discover_feeds_detailed
 from app.sources.google_news import google_news_search_feed_url
@@ -43,29 +45,47 @@ async def _search_web_results(query: str) -> list[dict[str, str]]:
 
 
 async def _search_web_results_tavily(query: str) -> list[dict[str, str]]:
-    api_key = _pick_tavily_api_key()
-    client = AsyncTavilyClient(api_key=api_key)
-    payload = await client.search(
-        query=query,
-        max_results=MAX_PREVIEW_LIMIT,
-        include_answer=False,
-        include_raw_content=False,
-    )
-    results = payload.get("results", [])
-    if not isinstance(results, list):
-        raise ValueError("Tavily search payload is missing a results list")
+    manager = _get_tavily_key_manager()
+    logger = logging.getLogger(__name__)
 
-    normalized: list[dict[str, str]] = []
-    for item in results[:MAX_PREVIEW_LIMIT]:
-        if not isinstance(item, dict):
-            continue
-        title = str(item.get("title", "")).strip()
-        url = str(item.get("url", "")).strip()
-        snippet = str(item.get("content", "") or item.get("snippet", "")).strip()
-        if not url:
-            continue
-        normalized.append({"title": title, "url": url, "snippet": truncate_text(snippet, max_chars=80)})
-    return normalized
+    tried: set[str] = set()
+    while True:
+        key = manager.next_key()
+        if key is None:
+            raise ValueError("Tavily web search failed: all configured API keys are deactivated")
+        if key in tried:
+            raise ValueError("Tavily web search failed: all active API keys exhausted without success")
+        tried.add(key)
+
+        client = AsyncTavilyClient(api_key=key)
+        try:
+            payload = await client.search(
+                query=query,
+                max_results=MAX_PREVIEW_LIMIT,
+                include_answer=False,
+                include_raw_content=False,
+            )
+        except Exception as exc:
+            if "deactivated" in str(exc).lower():
+                manager.mark_dead(key)
+                continue
+            raise
+
+        results = payload.get("results", [])
+        if not isinstance(results, list):
+            raise ValueError("Tavily search payload is missing a results list")
+
+        normalized: list[dict[str, str]] = []
+        for item in results[:MAX_PREVIEW_LIMIT]:
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title", "")).strip()
+            url = str(item.get("url", "")).strip()
+            snippet = str(item.get("content", "") or item.get("snippet", "")).strip()
+            if not url:
+                continue
+            normalized.append({"title": title, "url": url, "snippet": truncate_text(snippet, max_chars=80)})
+        return normalized
 
 
 async def _search_web_results_exa(query: str) -> list[dict[str, str]]:
@@ -93,17 +113,6 @@ async def _search_web_results_exa(query: str) -> list[dict[str, str]]:
         normalized.append({"title": title, "url": url, "snippet": truncate_text(snippet, max_chars=80)})
     return normalized
 
-
-def _pick_tavily_api_key() -> str:
-    raw_value = os.getenv("TAVILY_API_KEYS", "").strip()
-    if not raw_value:
-        raise ValueError("TAVILY_API_KEYS is not configured")
-
-    candidates = [item.strip() for item in raw_value.split(",") if item.strip()]
-    if not candidates:
-        raise ValueError("TAVILY_API_KEYS does not contain any usable API keys")
-
-    return random.choice(candidates)
 
 
 @tool(
